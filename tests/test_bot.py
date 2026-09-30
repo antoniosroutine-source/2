@@ -391,6 +391,15 @@ class BotTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             agent.resolve_market(c, "NAS100")
 
+    def test_base_url_follows_key_type(self):
+        import importlib
+        with mock.patch.dict(os.environ, {"FPERP_API_KEY": "fp_live_x"}, clear=False):
+            os.environ.pop("FPERP_BASE_URL", None)
+            self.assertEqual(importlib.reload(config).BASE_URL, config.LIVE_URL)
+        with mock.patch.dict(os.environ, {"FPERP_API_KEY": "fp_test_x"}, clear=False):
+            self.assertEqual(importlib.reload(config).BASE_URL, config.SANDBOX_URL)
+        importlib.reload(config)
+
     def test_key_guard(self):
         with self.assertRaises(SystemExit):
             agent.check_key("fp_live_abc", config.SANDBOX_URL)

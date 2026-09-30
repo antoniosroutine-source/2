@@ -1,25 +1,26 @@
 # MFP Trading Bot: ICT Silver Bullet
 
-This is an automated trading bot for a **MyFundedPerps Prime ($25K)** account. It trades MFP's **Nasdaq-100 perpetual, XYZ100** (`hyperliquid|xyz:XYZ100`), using the ICT Silver Bullet strategy. A local dashboard gives you a master kill switch, a toggle for each strategy, risk bars and a trade log.
+This is an automated trading bot for a **MyFundedPerps 1-Step Select ($10K)** account. It trades MFP's **Nasdaq-100 perpetual, XYZ100** (`hyperliquid|xyz:XYZ100`), using the ICT Silver Bullet strategy. A local dashboard gives you a master kill switch, a toggle for each strategy, risk bars and a trade log.
 
 The API calls follow MFP's official docs and OpenAPI spec (https://docs.myfundedperpetuals.com). The API is in beta and the bot has not placed a real order yet. **Test on the sandbox first.**
 
-## Quick start
-1. Install Python 3.9+ (on Windows, tick "Add to PATH"). On Windows, also run `pip install -r requirements.txt`.
-2. In [API Key Settings](https://myfundedperpetuals.com/settings?section=api-keys), create a key with **Read And Trade** access and the **Test (Sandbox)** environment. It starts `fp_test_` and trades a free $100K sandbox account. Then set it:
-   - Windows: `set FPERP_API_KEY=fp_test_...`
-   - Mac/Linux: `export FPERP_API_KEY=fp_test_...`
-3. Run `python serve_log.py` and open http://127.0.0.1:8765/
-4. Turn on the **Master switch** to start the bot. Turn it off to stop it.
+## Quick start (Windows)
+1. Install Python 3.9+ from python.org. On the first installer screen, tick **"Add python.exe to PATH"**.
+2. Download this branch as a ZIP and unzip it. Open **Command Prompt** in the unzipped folder, then run:
+   `pip install -r requirements.txt`
+3. Set your key in that same Command Prompt window (it lasts until you close the window):
+   `set FPERP_API_KEY=fp_live_...`
+   The bot uses the live server for `fp_live_` keys and the sandbox for `fp_test_` keys.
+4. Run the read-only check, which places no orders: `python check.py`
+   If it lists more than one account, copy the right `id` and run `set FPERP_ACCOUNT_ID=that-id`, then run the check again.
+5. Start the dashboard: `python serve_log.py`, then open http://127.0.0.1:8765/
+6. Turn on the **Master switch** to start the bot. Turn it off to stop it. Keep the Command Prompt window open while it runs.
 
 Optional environment variables:
-- `FPERP_ACCOUNT_ID`: which account to trade. Defaults to the first account.
-- `FPERP_BASE_URL`: the API URL. Defaults to the sandbox.
+- `FPERP_BASE_URL`: override the server chosen from the key type.
 - `FPERP_MARKET`: the market. Defaults to `hyperliquid|xyz:XYZ100`. A plain symbol (`XYZ100`, or the aliases `NAS100`/`NDX`/`US100`/`NQ`) is looked up in MFP's market list at startup.
 
 **Never paste an API key into chat or commit it to the repo.** Keep it only in the environment variable. If a key is ever exposed, revoke it in the MFP dashboard and create a new one.
-
-To go live, set `FPERP_BASE_URL=https://developers.myfundedperpetuals.com/v1` and use a live `fp_live_` key. Test keys only work on the sandbox host and live keys only on the live host, so the bot won't start if they don't match.
 
 ## Strategy (`strategy.py`)
 The bot builds 1-minute candles by sampling the mid price every 5 s. It only trades during Silver Bullet windows on weekdays (New York time 03–04, 10–11 and 14–15):
@@ -35,20 +36,18 @@ The bot builds 1-minute candles by sampling the mid price every 5 s. It only tra
 After a start, the bot needs about 60 minutes of candles before it can find liquidity levels.
 
 ## Risk (`risk.py`, `config.py`)
-MFP's 1-Step Prime rules: **3% daily loss ($750)**, **5% static max drawdown ($1,250)** and a **12% profit target ($3,000)**, all on the starting balance and measured on equity including open P&L. The daily loss resets at **midnight New York time**.
-
-The bot uses tighter limits of its own:
+MFP's 1-Step Select rules: **3% daily loss ($300)**, **3% static max drawdown (floor $9,700)** and a **9% profit target ($900)**, all on the starting balance and measured on equity including open P&L. The daily loss resets at **midnight New York time**.
 
 | Setting | Value |
 |---|---|
-| Bot max loss | 2% static ($500) |
-| Bot daily loss cap | 2% ($500), resetting at midnight New York time like MFP's |
-| Bot halts at | 75% of each of its limits ($375) |
-| MFP room check | Also halts if MFP reports less than $150 left above either firm floor (`SERVER_ROOM_RESERVE_USD`). This covers losses the bot didn't see, such as manual trades or a restart mid-day. |
-| Risk per trade | $100 if the stop is hit |
-| Target | 3.33× the stop distance (the $450 : $1,500 ratio), about +$333 |
-| Losses before halt | 3 full stop-outs |
-| Position cap | 3x equity notional ($75K), 5x isolated leverage (XYZ100 allows up to 12x) |
+| Max loss limit | 3% static ($300) |
+| Daily loss limit | 3% ($300), resetting at midnight New York time like MFP's |
+| Bot halts at | 75% of each limit ($225) |
+| MFP room check | Also halts if MFP reports less than $50 left above either firm floor (`SERVER_ROOM_RESERVE_USD`). This covers losses the bot didn't see, such as manual trades or a restart mid-day. |
+| Risk per trade | Up to $100 if the stop is hit |
+| Target | 3.33× the stop distance, about +$333 on a full-size trade |
+| Losses before halt | 2 full stop-outs (a third would pass $225) |
+| Position cap | 3x equity notional ($30K), 5x isolated leverage (XYZ100 allows up to 12x). On a stop tighter than about 0.33% (~80 points), this cap keeps the risk below $100. |
 
 - Before each trade, the bot checks whether that trade's full stop-out would cross a halt level. If it would, the trade is skipped.
 - If a limit is hit while a position is open, the bot closes the position.

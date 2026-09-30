@@ -265,6 +265,10 @@ def main():
         accounts = client.list_accounts()
         if not accounts:
             sys.exit("No accounts found for this API key.")
+        if len(accounts) > 1:
+            listed = ", ".join(f"{a.get('id')} ({a.get('name')}, {a.get('status')})" for a in accounts)
+            sys.exit(f"This key can see {len(accounts)} accounts: {listed}. "
+                     "Set FPERP_ACCOUNT_ID to the one to trade (python check.py lists them).")
         account_id = pick(accounts[0], "id", "account_id")
     account = client.get_account(account_id)
     if account.get("status") != "active":
