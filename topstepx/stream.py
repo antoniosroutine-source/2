@@ -5,7 +5,10 @@ big resting orders ("walls") that targets front-run. If the connection drops, th
 to aggression from 1-minute bars until it reconnects.
 Needs:  pip install websocket-client
 """
+import datetime as dt
+import gzip
 import json
+import os
 import statistics
 import threading
 import time
@@ -20,13 +23,48 @@ DOM_ASK, DOM_BID, DOM_RESET = 1, 2, 6
 TRADE_BUY, TRADE_SELL = 0, 1
 
 
+class Recorder:
+    """Appends every quote, trade and order-book update to recordings/YYYY-MM-DD.jsonl.gz (UTC date).
+
+    Lines are compact JSON arrays:
+      ["Q", ts, last, bid, ask]         quote
+      ["T", ts, price, volume, side]    trade: side 0 = buyer aggressor, 1 = seller aggressor
+      ["D", ts, type, price, volume]    order book: type 1 ask, 2 bid, 6 reset (ProjectX DomType)
+    ts is the local receive time; the exchange timestamp is kept as the last element when sent.
+    """
+
+    def __init__(self, folder):
+        self.folder = folder
+        self.day = None
+        self.f = None
+        self.lines = 0
+
+    def write(self, row):
+        day = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        if day != self.day:
+            self.close()
+            os.makedirs(self.folder, exist_ok=True)
+            self.f = gzip.open(os.path.join(self.folder, f"{day}.jsonl.gz"), "at")
+            self.day = day
+        self.f.write(json.dumps(row, separators=(",", ":")) + "\n")
+        self.lines += 1
+        if self.lines % 500 == 0:
+            self.f.flush()
+
+    def close(self):
+        if self.f:
+            self.f.close()
+            self.f = None
+
+
 class MarketStream:
-    def __init__(self, hub_url, token_fn, contract_id, aggression, log):
+    def __init__(self, hub_url, token_fn, contract_id, aggression, log, recorder=None):
         self.url = hub_url
         self.token_fn = token_fn          # returns a fresh token (refreshes as needed)
         self.contract_id = contract_id
         self.aggression = aggression
         self.log = log
+        self.recorder = recorder
         self.last_price = None
         self.last_msg = 0.0
         self.asks, self.bids = {}, {}
@@ -53,6 +91,8 @@ class MarketStream:
         self.running = False
         if self.ws:
             self.ws.close()
+        if self.recorder:
+            self.recorder.close()
 
     def _run(self):
         delay = 2
@@ -61,7 +101,8 @@ class MarketStream:
                 self.ws = websocket.WebSocketApp(f"{self.url}?access_token={self.token_fn()}",
                                                  on_open=self._on_open, on_message=self._on_message,
                                                  on_error=lambda ws, e: self.log("stream_error", error=str(e)))
-                self.ws.run_forever()
+                # websocket-level pings detect a half-open connection so it reconnects
+                self.ws.run_forever(ping_interval=20, ping_timeout=10)
             except Exception as e:  # keep reconnecting whatever happens
                 self.log("stream_error", error=str(e))
             if self.running:
@@ -111,18 +152,26 @@ class MarketStream:
             return
         items = args[1] if isinstance(args[1], list) else [args[1]]
         now = time.time()
+        rec = self.recorder.write if self.recorder else None
         for d in items:
             if not isinstance(d, dict):
                 continue
-            if target == "GatewayQuote" and d.get("lastPrice") is not None:
-                self.last_price = float(d["lastPrice"])
+            if target == "GatewayQuote":
+                if d.get("lastPrice") is not None:
+                    self.last_price = float(d["lastPrice"])
+                if rec:
+                    rec(["Q", round(now, 3), d.get("lastPrice"), d.get("bestBid"), d.get("bestAsk")])
             elif target == "GatewayTrade" and d.get("volume"):
                 if d.get("type") in (TRADE_BUY, TRADE_SELL):
                     self.aggression.add_trade(now, float(d["volume"]), d["type"] == TRADE_BUY)
                 if d.get("price") is not None:
                     self.last_price = float(d["price"])
+                if rec:
+                    rec(["T", round(now, 3), d.get("price"), d.get("volume"), d.get("type"), d.get("timestamp")])
             elif target == "GatewayDepth":
                 self._depth(d)
+                if rec:
+                    rec(["D", round(now, 3), d.get("type"), d.get("price"), d.get("volume"), d.get("timestamp")])
 
     def _depth(self, d):
         kind, price, vol = d.get("type"), d.get("price"), d.get("volume") or 0

@@ -54,7 +54,7 @@ class ProjectX:
                     out = json.loads(resp.read() or b"{}")
                 break
             except urllib.error.HTTPError as e:
-                if e.code == 401 and auth and attempt == 0:
+                if e.code == 401 and auth and attempt == 0 and retries > 1:
                     self.login()
                     headers["Authorization"] = f"Bearer {self.token}"
                     continue
@@ -124,16 +124,24 @@ class ProjectX:
         return [out[t] for t in sorted(out)]
 
     # -- orders and positions -----------------------------------------------------------
-    def place(self, account_id, contract_id, order_type, side, size, limit_price=None, stop_price=None, tag=None):
-        out = self._post("/api/Order/place", {
-            "accountId": account_id, "contractId": contract_id, "type": order_type, "side": side,
-            "size": int(size), "limitPrice": limit_price, "stopPrice": stop_price, "trailPrice": None,
-            "customTag": tag, "stopLossBracket": None, "takeProfitBracket": None})
-        return out["orderId"]
+    def place(self, account_id, contract_id, order_type, side, size, limit_price=None, stop_price=None, tag=None,
+              stop_ticks=None, target_ticks=None):
+        """Place an order. stop_ticks/target_ticks attach a linked (OCO) stop and target that the
+        platform creates on the fill; the account must be in Auto OCO Brackets mode.
+        Never retried automatically: a retry after a lost response could double the position."""
+        body = {"accountId": account_id, "contractId": contract_id, "type": order_type, "side": side,
+                "size": int(size), "limitPrice": limit_price, "stopPrice": stop_price, "trailPrice": None,
+                "customTag": tag, "stopLossBracket": None, "takeProfitBracket": None}
+        if stop_ticks:
+            body["stopLossBracket"] = {"ticks": int(stop_ticks), "type": ORDER_STOP}
+        if target_ticks:
+            body["takeProfitBracket"] = {"ticks": int(target_ticks), "type": ORDER_LIMIT}
+        return self._post("/api/Order/place", body, retries=1)["orderId"]
 
     def modify(self, account_id, order_id, stop_price=None, limit_price=None, size=None):
         self._post("/api/Order/modify", {"accountId": account_id, "orderId": order_id, "size": size,
-                                         "limitPrice": limit_price, "stopPrice": stop_price, "trailPrice": None})
+                                         "limitPrice": limit_price, "stopPrice": stop_price, "trailPrice": None},
+                   retries=1)
 
     def cancel(self, account_id, order_id):
         self._post("/api/Order/cancel", {"accountId": account_id, "orderId": order_id})
@@ -145,7 +153,7 @@ class ProjectX:
         return self._post("/api/Position/searchOpen", {"accountId": account_id}).get("positions", [])
 
     def close_position(self, account_id, contract_id):
-        self._post("/api/Position/closeContract", {"accountId": account_id, "contractId": contract_id})
+        self._post("/api/Position/closeContract", {"accountId": account_id, "contractId": contract_id}, retries=1)
 
     def trades(self, account_id, start, end=None):
         body = {"accountId": account_id, "startTimestamp": iso(start)}

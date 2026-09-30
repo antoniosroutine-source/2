@@ -3,8 +3,10 @@
     python backtest.py --days 60                 # download MNQ history through your ProjectX key
     python backtest.py --csv bars.csv            # or use a CSV: time,open,high,low,close,volume
 
-Fills: entry at the signal bar's close plus 1 tick of slippage; the stop is checked before the
-target inside each bar (the pessimistic assumption); stops that gap fill at the bar's open.
+Fills: entry at the signal bar's close plus 1 tick of slippage; the stop sits FIXED_STOP_PTS from the
+fill (as the live bracket does); the stop is checked before the target inside each bar (the pessimistic
+assumption); stops that gap fill at the bar's open. Open trades close before the 8:30am ET news and
+when the day reaches +$1,500 including the open trade.
 Aggression comes from 1-minute bars here (the live bot reads the real tape), so treat results
 as an approximation of live behaviour.
 """
@@ -37,6 +39,8 @@ def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
                 exit_px, reason = (b.o if gap else pos["stop"]) - d * slip, "stop"
             elif (d > 0 and b.h >= pos["target"]) or (d < 0 and b.l <= pos["target"]):
                 exit_px, reason = pos["target"], "target"
+            elif guard.pnl > 0 and ((d > 0 and b.h >= pos["day_cap"]) or (d < 0 and b.l <= pos["day_cap"])):
+                exit_px, reason = pos["day_cap"], "day_cap"      # the day reached +$1,500 with this trade
             elif guard.must_flatten(b.t):
                 exit_px, reason = b.o - d * slip, "flat_by"
             if exit_px is not None:
@@ -64,8 +68,11 @@ def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
             continue
         d = 1 if sig["side"] == "long" else -1
         entry = sig["entry"] + d * slip
-        pos = {"side": sig["side"], "size": sig["size"], "entry": entry, "stop": sig["stop"],
-               "initial_stop": sig["stop"], "target": sig["target"], "peak": entry, "opened": b.t + 60}
+        stop = entry - d * p.FIXED_STOP_PTS if p.FIXED_STOP_PTS else sig["stop"]   # linked bracket: from the fill
+        room = p.DAILY_PROFIT_STOP_USD - guard.pnl + p.FEE_PER_CONTRACT_RT * sig["size"]
+        pos = {"side": sig["side"], "size": sig["size"], "entry": entry, "stop": stop,
+               "initial_stop": stop, "target": sig["target"], "peak": entry, "opened": b.t + 60,
+               "day_cap": entry + d * room / (sig["size"] * pv)}
     return trades, skips
 
 

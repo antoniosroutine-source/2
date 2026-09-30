@@ -36,7 +36,8 @@ DAILY_PROFIT_STOP_USD = 1500.0    # stop for the day once the day's P&L reaches 
 # --- Session (New York time) ----------------------------------------------------------
 ENTRY_START = "19:00"             # Asia session: new entries only between these times
 ENTRY_END = "02:00"
-FLAT_BY = "16:05"                 # flatten before Topstep's 4:10pm ET (3:10pm CT) cutoff
+FLAT_BY = "08:25"                 # any open trade is closed before the 8:30am ET news releases (CPI, jobs)
+                                  # and so always well before Topstep's 4:10pm ET cutoff
 DAY_START = "18:00"               # the futures trading day starts at 6pm ET
 
 # --- Strategy ------------------------------------------------------------------------
@@ -52,8 +53,23 @@ DOM_TARGETS = True                # front-run big resting orders between entry a
 WALL_MIN_SIZE = 100               # a "wall" has at least this many contracts resting at one price...
 WALL_MULT = 4.0                   # ...and at least 4x the median resting size
 
+# --- Safety -------------------------------------------------------------------------
+MAX_BAR_AGE_SEC = 180             # no new entries if the newest completed bar is older than this
+MAX_ENTRY_DRIFT_PTS = 5.0         # skip an entry if price moved this far from the signal (confirm mode)
+
+# --- Semi-automatic mode and the alert page ------------------------------------------
+CONFIRM_TIMEOUT_SEC = 30          # a signal waits this long for Accept in confirm mode, then expires
+UI_HOST = "127.0.0.1"             # the alert page: http://127.0.0.1:8766/
+UI_PORT = 8766
+NTFY_TOPIC = os.environ.get("PX_NTFY_TOPIC")   # optional phone alerts through the free ntfy.sh app
+
+# --- Recording (tape + order book), to build real order-flow data ---------------------
+RECORD = True
+
 # --- Loop and files ------------------------------------------------------------------
 POLL_SEC = 3
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(HERE, "px_log.jsonl")
-STATE_FILE = os.path.join(HERE, "px_state.json")
+STATE_FILE = os.path.join(HERE, "px_state.json")          # daily limits survive a restart
+RECORD_DIR = os.path.join(HERE, "recordings")             # one gzip file of tape + book per day
+DECISIONS_FILE = os.path.join(HERE, "decisions.jsonl")    # every Accept/Reject and "my setup" mark

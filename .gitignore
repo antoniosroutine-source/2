@@ -8,3 +8,6 @@ topstepx/px_log.jsonl
 topstepx/px_state.json
 topstepx/backtest_trades.json
 topstepx/STOP
+topstepx/px_state.json.tmp
+topstepx/decisions.jsonl
+topstepx/recordings/

@@ -49,6 +49,8 @@ def main():
 
     print(f"\nOpen positions: {client.positions(account['id']) or 'none'}")
     print(f"Open orders: {client.open_orders(account['id']) or 'none'}")
+    print("\nBefore --live: turn on Auto OCO Brackets for this account in TopstepX (Settings > Risk Settings).")
+    print("The bot cannot read that setting; if it is off, the first live entry is rejected and the bot halts.")
     print("\nAll checks passed. No orders were placed.")
 
 

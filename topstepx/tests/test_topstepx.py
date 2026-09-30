@@ -1,11 +1,14 @@
 import datetime as dt
+import gzip
 import io
 import json
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
+import urllib.error
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,7 +20,8 @@ from levels import ET, Aggression, SessionTracker, in_window, trading_day  # noq
 from manage import DayGuard, next_stop  # noqa: E402
 from projectx import PXError, ProjectX  # noqa: E402
 from strategy import Bar, LevelSweep  # noqa: E402
-from stream import MarketStream  # noqa: E402
+from stream import MarketStream, Recorder  # noqa: E402
+from ui import Desk  # noqa: E402
 
 
 def params(**over):
@@ -199,6 +203,25 @@ class FakeResp(io.BytesIO):
 
 
 class ClientTests(unittest.TestCase):
+    def test_order_placement_is_never_retried(self):
+        c = ProjectX("https://api.x", "trader", "key")
+        c.token, c.token_time = "T", 1e18
+        err = urllib.error.HTTPError("u", 503, "busy", {}, io.BytesIO(b"busy"))
+        with mock.patch("urllib.request.urlopen", side_effect=[err]) as m, mock.patch("time.sleep"):
+            with self.assertRaises(PXError):
+                c.place(5, "CON", 2, 0, 12, stop_ticks=80, target_ticks=250)
+        self.assertEqual(m.call_count, 1)
+
+    def test_bracket_body(self):
+        c = ProjectX("https://api.x", "trader", "key")
+        c.token, c.token_time = "T", 1e18
+        ok = FakeResp(json.dumps({"success": True, "orderId": 3}).encode())
+        with mock.patch("urllib.request.urlopen", return_value=ok) as m:
+            c.place(5, "CON", 2, 1, 12, tag="ls-1", stop_ticks=80, target_ticks=250)
+        body = json.loads(m.call_args[0][0].data)
+        self.assertEqual(body["stopLossBracket"], {"ticks": 80, "type": 4})
+        self.assertEqual(body["takeProfitBracket"], {"ticks": 250, "type": 1})
+
     def test_login_and_order_body(self):
         c = ProjectX("https://api.x", "trader", "key")
         responses = [FakeResp(json.dumps({"success": True, "token": "T"}).encode()),
@@ -235,52 +258,81 @@ class ClientTests(unittest.TestCase):
 
 
 class FakePX:
-    def __init__(self):
-        self.orders, self.cancelled, self.modified = [], [], []
-        self.open = []
-        self.fills = []
+    """A fake ProjectX account: orders, positions and fills are scripted by each test."""
 
-    def place(self, acct, cid, typ, side, size, limit_price=None, stop_price=None, tag=None):
-        self.orders.append((typ, side, size, limit_price, stop_price, tag))
+    def __init__(self):
+        self.orders, self.cancelled, self.modified, self.closed = [], [], [], []
+        self.open = []
+        self.pos = []
+        self.fills = []
+        self.reject = None
+
+    def place(self, acct, cid, typ, side, size, limit_price=None, stop_price=None, tag=None,
+              stop_ticks=None, target_ticks=None):
+        if self.reject:
+            raise PXError("/api/Order/place", 2, self.reject)
+        self.orders.append({"type": typ, "side": side, "size": size, "tag": tag,
+                            "stop_ticks": stop_ticks, "target_ticks": target_ticks})
         return len(self.orders)
+
+    def positions(self, acct):
+        return self.pos
 
     def open_orders(self, acct):
         return self.open
 
     def cancel(self, acct, oid):
         self.cancelled.append(oid)
+        self.open = [o for o in self.open if o["id"] != oid]
 
     def modify(self, acct, oid, stop_price=None, **k):
         self.modified.append((oid, stop_price))
+
+    def close_position(self, acct, cid):
+        self.closed.append(cid)
+        self.pos = []
 
     def trades(self, acct, start):
         return self.fills
 
 
 class LiveBrokerTests(unittest.TestCase):
-    def test_exits_and_foreign_bracket_cancelled(self):
-        px = FakePX()
-        b = bot.LiveBroker(px, 9, {"id": "CON"})
-        px.open = [{"id": 1, "contractId": "CON"}, {"id": 2, "contractId": "CON"}, {"id": 99, "contractId": "CON"}]
-        with mock.patch.object(bot, "log"):
-            b.set_exits("short", 12, 104.0, 21.5, "ls-1")
-        self.assertEqual(px.orders[0][:5], (4, 0, 12, None, 104.0))     # buy stop
-        self.assertEqual(px.orders[1][:5], (1, 0, 12, 21.5, None))      # buy limit target
-        self.assertEqual(px.cancelled, [99])
+    def setUp(self):
+        self.px = FakePX()
+        self.b = bot.LiveBroker(self.px, 9, {"id": "CON"})
 
-    def test_realized_includes_fees(self):
-        px = FakePX()
-        px.fills = [{"contractId": "CON", "profitAndLoss": None, "fees": 4.44},
-                    {"contractId": "CON", "profitAndLoss": 600.0, "fees": 4.44},
-                    {"contractId": "OTHER", "profitAndLoss": 100.0, "fees": 1.0},
-                    {"contractId": "CON", "profitAndLoss": 50.0, "fees": 1.0, "voided": True}]
-        b = bot.LiveBroker(px, 9, {"id": "CON"})
-        self.assertAlmostEqual(b._realized(dt.datetime.now(dt.timezone.utc)), 591.12)
-        self.assertAlmostEqual(b.day_pnl(dt.datetime.now(dt.timezone.utc)), 690.12)
+    def test_entry_carries_linked_brackets(self):
+        self.px.pos = [{"contractId": "CON", "type": 2, "size": 12, "averagePrice": 83.75}]
+        with mock.patch("time.sleep"):
+            fill = self.b.enter("short", 12, 84, "ls-1", 80, 250)
+        self.assertEqual(fill, 83.75)
+        o = self.px.orders[0]
+        self.assertEqual((o["type"], o["side"], o["size"], o["stop_ticks"], o["target_ticks"]), (2, 1, 12, 80, 250))
+
+    def test_move_stop_modifies_the_bracket_stop(self):
+        self.px.open = [{"id": 5, "contractId": "CON", "type": 1}, {"id": 6, "contractId": "CON", "type": 4}]
+        self.b.move_stop(62.0)
+        self.assertEqual(self.px.modified, [(6, 62.0)])
+
+    def test_trade_result_waits_for_the_closing_fill(self):
+        t = {"opened": 1000.0, "side": "short", "size": 12, "entry": 83.75, "stop": 103.75, "gone_at": 2000.0}
+        self.px.fills = [{"contractId": "CON", "profitAndLoss": None, "fees": 4.44}]
+        self.assertIsNone(self.b.trade_result(t, 90.0, 2010.0))            # not listed yet: wait
+        est = self.b.trade_result(t, 90.0, 2031.0)                           # 30 s later: estimate
+        self.assertEqual(est[2], "estimated")
+        self.assertAlmostEqual(est[1], (83.75 - 90.0) * 24 - 0.74 * 12, places=2)
+        self.px.fills.append({"contractId": "CON", "profitAndLoss": -500.0, "fees": 4.44})
+        self.assertEqual(self.b.trade_result(t, 90.0, 2040.0)[1:], (-508.88, "exchange"))
+
+    def test_day_pnl_counts_every_contract(self):
+        self.px.fills = [{"contractId": "CON", "profitAndLoss": 600.0, "fees": 4.44},
+                         {"contractId": "OTHER", "profitAndLoss": 100.0, "fees": 1.0},
+                         {"contractId": "CON", "profitAndLoss": 50.0, "fees": 1.0, "voided": True}]
+        self.assertAlmostEqual(self.b.day_pnl(dt.datetime.now(dt.timezone.utc)), 694.56)
 
 
 class FakeClient:
-    """Enough of the REST client to drive Bot.step() in paper mode."""
+    """Enough of the REST client to drive Bot.step()."""
 
     def __init__(self, bars):
         self.all = bars
@@ -297,6 +349,7 @@ class BotTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.patches = [mock.patch.object(config, "LOG_FILE", os.path.join(self.tmp.name, "log.jsonl")),
+                        mock.patch.object(config, "STATE_FILE", os.path.join(self.tmp.name, "state.json")),
                         mock.patch("builtins.print")]
         for p in self.patches:
             p.start()
@@ -310,40 +363,176 @@ class BotTests(unittest.TestCase):
         with open(config.LOG_FILE) as f:
             return [json.loads(line) for line in f]
 
-    def test_paper_trade_opens_trails_and_closes(self):
-        start = ny(5, 20)
-        bars = make_bars(SHORT_SETUP, start)
-        # after entry at 84: drop to 50 (peak), then bounce: the 65% trail should exit it
-        bars += [Bar(start + 60 * (16 + i), *r, v=100) for i, r in enumerate(
-            [(84, 84.5, 70, 71), (71, 72, 50, 52), (52, 70, 52, 69)])]
+    def make_bot(self, bars, broker, mode="paper"):
         client = FakeClient(bars)
-        broker = bot.PaperBroker(2.0, 0.74)
-        b = bot.Bot(client, {"name": "paper"}, {"id": "CON", "name": "MNQZ26"}, broker, live=False)
+        desk = Desk(os.path.join(self.tmp.name, "decisions.jsonl"), lambda *a, **k: None)
+        b = bot.Bot(client, {"id": 9, "name": "test"}, {"id": "CON", "name": "MNQZ26"}, broker, mode, desk=desk)
         b.aggression = lambda now: (-0.5, "test")
-        for i in range(1, len(bars) + 1):
+        return b, client
+
+    def feed(self, b, client, bars, upto=None):
+        for i in range(1, (upto or len(bars)) + 1):
             client.visible = i
             b.step(bars[i - 1].t + 61)
+
+    def trail_bars(self):
+        start = ny(5, 20)
+        bars = make_bars(SHORT_SETUP, start)
+        # after the short at 84: drop to 50 (the peak), then bounce: the 65% trail exits it
+        return bars + [Bar(start + 60 * (16 + i), *r, v=100) for i, r in enumerate(
+            [(84, 84.5, 70, 71), (71, 72, 50, 52), (52, 70, 52, 69)])]
+
+    def test_paper_trade_opens_trails_and_closes(self):
+        bars = self.trail_bars()
+        b, client = self.make_bot(bars, bot.PaperBroker(2.0, 0.74, 0.25))
+        self.feed(b, client, bars)
         ev = [e["event"] for e in self.events()]
         self.assertIn("trade_open", ev)
+        opened = [e for e in self.events() if e["event"] == "trade_open"][0]
+        self.assertEqual((opened["entry"], opened["stop"]), (83.75, 103.75))   # 1 tick slippage, 20-pt stop
         self.assertIn("stop_moved", ev)
         closed = [e for e in self.events() if e["event"] == "trade_closed"][0]
-        # peak 50 -> 34 pts in favour; 65% kept -> stop 84 - 22.1 = 61.9 -> 62.0; exit at 62
-        self.assertAlmostEqual(closed["pnl"], (84 - 62.0) * 12 * 2 - 0.74 * 12, places=2)
+        # peak 50 -> 33.75 pts in favour; 65% kept -> stop 61.81 -> 62.0 (tick, toward safety)
+        self.assertAlmostEqual(closed["pnl"], (83.75 - 62.0) * 24 - 0.74 * 12, places=2)
         self.assertIsNone(b.trade)
 
     def test_entry_blocked_outside_window(self):
-        start = ny(6, 10)                                  # 10am: not the Asia session
-        bars = make_bars(SHORT_SETUP, start)
-        client = FakeClient(bars)
-        b = bot.Bot(client, {"name": "paper"}, {"id": "CON", "name": "MNQZ26"},
-                    bot.PaperBroker(2.0, 0.74), live=False)
-        b.aggression = lambda now: (-0.5, "test")
-        for i in range(1, len(bars) + 1):
-            client.visible = i
-            b.step(bars[i - 1].t + 61)
+        bars = make_bars(SHORT_SETUP, ny(6, 10))           # 10am: not the Asia session
+        b, client = self.make_bot(bars, bot.PaperBroker(2.0, 0.74, 0.25))
+        self.feed(b, client, bars)
         blocked = [e for e in self.events() if e["event"] == "entry_blocked"]
         self.assertEqual(blocked[0]["reason"], "outside the entry window")
         self.assertIsNone(b.trade)
+
+    def test_confirm_mode_waits_for_accept(self):
+        bars = make_bars(SHORT_SETUP, ny(5, 20))
+        broker = bot.PaperBroker(2.0, 0.74, 0.25)
+        b, client = self.make_bot(bars, broker, mode="confirm")
+        b.live = False                                     # paper fills, confirm flow
+        self.feed(b, client, bars)
+        self.assertIsNone(b.trade)                         # nothing without an answer
+        sid, sig = b.awaiting
+        self.assertTrue(b.desk.decide(sid, True))
+        b.step(bars[-1].t + 65)
+        self.assertEqual(b.trade["side"], "short")
+
+    def test_confirm_mode_rejected_and_expired(self):
+        bars = make_bars(SHORT_SETUP, ny(5, 20))
+        b, client = self.make_bot(bars, bot.PaperBroker(2.0, 0.74, 0.25), mode="confirm")
+        b.live = False
+        self.feed(b, client, bars)
+        sid, _ = b.awaiting
+        b.desk.decide(sid, False)
+        b.step(bars[-1].t + 65)
+        self.assertIsNone(b.trade)
+        self.assertIn("signal_reject", [e["event"] for e in self.events()])
+        with open(b.desk.file) as f:
+            kinds = [json.loads(l)["kind"] for l in f]
+        self.assertEqual(kinds, ["signal", "answer"])
+
+    def test_bracket_mode_rejection_halts_trading(self):
+        px = FakePX()
+        px.reject = "Brackets cannot be used with Position Brackets. You must enable Auto OCO Brackets."
+        bars = make_bars(SHORT_SETUP, ny(5, 20))
+        b, client = self.make_bot(bars, bot.LiveBroker(px, 9, {"id": "CON"}), mode="auto")
+        b.c = client
+        self.feed(b, client, bars)
+        self.assertIn("Auto OCO", b.halted)
+        self.assertIsNone(b.trade)
+
+    def test_live_manage_flattens_mismatch_and_missing_stop(self):
+        px = FakePX()
+        b, client = self.make_bot([], bot.LiveBroker(px, 9, {"id": "CON"}), mode="auto")
+        now = ny(5, 21)
+        b.last_bar_t = now - 60
+        b.trade = {"side": "short", "size": 12, "entry": 83.75, "stop": 103.75, "initial_stop": 103.75,
+                   "target": 21.25, "peak": 83.75, "opened": now - 60}
+        px.pos = [{"contractId": "CON", "type": 1, "size": 12, "averagePrice": 83.75}]   # long: mismatch
+        b.step(now)
+        self.assertEqual(px.closed, ["CON"])
+        self.assertIsNone(b.trade)
+        b.trade = {"side": "short", "size": 12, "entry": 83.75, "stop": 103.75, "initial_stop": 103.75,
+                   "target": 21.25, "peak": 83.75, "opened": now - 60}
+        px.pos = [{"contractId": "CON", "type": 2, "size": 12, "averagePrice": 83.75}]
+        px.open = []                                                                  # no working stop
+        b.step(now + 3)
+        self.assertEqual(px.closed, ["CON", "CON"])
+        self.assertIn("no working stop", " ".join(e.get("message", "") for e in self.events()))
+
+    def test_unknown_position_is_left_alone(self):
+        px = FakePX()
+        bars = make_bars(SHORT_SETUP, ny(5, 20))
+        b, client = self.make_bot(bars, bot.LiveBroker(px, 9, {"id": "CON"}), mode="auto")
+        px.pos = [{"contractId": "CON", "type": 1, "size": 3, "averagePrice": 90.0}]
+        self.feed(b, client, bars)
+        self.assertEqual(px.orders, [])
+        self.assertEqual(px.closed, [])
+        self.assertIn("unknown_position", [e["event"] for e in self.events()])
+
+    def test_open_profit_hits_day_cap(self):
+        bars = make_bars(SHORT_SETUP, ny(5, 20))
+        broker = bot.PaperBroker(2.0, 0.74, 0.25)
+        b, client = self.make_bot(bars, broker)
+        b.guard.pnl = 1200.0                               # already +$1,200 today (a paper day)
+        b.guard.day = trading_day(ny(5, 20))
+        self.feed(b, client, bars)
+        self.assertIsNotNone(b.trade)
+        b.last_close = 70.0                                # +13.75 pts * 24 = $330 open -> $1,530 day
+        b.step(bars[-1].t + 65)
+        self.assertIn("consistency", " ".join(e.get("reason", "") for e in self.events()))
+        self.assertIsNone(broker.pos)
+
+
+class PersistenceTests(unittest.TestCase):
+    def test_one_loss_survives_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "state.json")
+            g = DayGuard(params(), path)
+            g.record(ny(5, 20), -500)
+            g2 = DayGuard(params(), path)                  # the bot restarted
+            self.assertFalse(g2.can_enter(ny(5, 21))[0])
+            self.assertTrue(g2.can_enter(ny(6, 20))[0])    # a new trading day
+
+    def test_live_record_does_not_double_count(self):
+        g = DayGuard(params())
+        g.set_day_pnl(ny(5, 20), 600.0)
+        g.record(ny(5, 20), 600.0, add_pnl=False)
+        self.assertEqual(g.pnl, 600.0)
+
+
+class DeskAndRecorderTests(unittest.TestCase):
+    def test_desk_answers_marks_and_expiry(self):
+        with tempfile.TemporaryDirectory() as d:
+            desk = Desk(os.path.join(d, "dec.jsonl"), lambda *a, **k: None)
+            sig = {"side": "long", "entry": 1.0, "stop": 0.5, "target": 2.0}
+            sid = desk.ask(sig, "confirm", 30, {"price": 1.0})
+            self.assertIsNone(desk.answer(sid))
+            self.assertEqual(len(desk.view()["pending"]), 1)
+            desk.decide(sid, True)
+            self.assertEqual(desk.answer(sid), "accept")
+            sid2 = desk.ask(sig, "confirm", 0, {})
+            time.sleep(0.01)
+            self.assertEqual(desk.answer(sid2), "expired")
+            desk.update(price=1.5)
+            desk.mark("short", "absorption at the London low")
+            with open(desk.file) as f:
+                recs = [json.loads(l) for l in f]
+            self.assertEqual([r["kind"] for r in recs], ["signal", "answer", "signal", "answer", "my_setup"])
+            self.assertEqual(recs[-1]["snapshot"]["price"], 1.5)
+
+    def test_recorder_writes_tape_and_book(self):
+        with tempfile.TemporaryDirectory() as d:
+            rec = Recorder(d)
+            s = MarketStream("wss://x", lambda: "t", "CON", Aggression(15), lambda *a, **k: None, rec)
+            s.handle("GatewayTrade", ["CON", [{"type": 1, "volume": 3, "price": 100.25, "timestamp": "x"}]])
+            s.handle("GatewayDepth", ["CON", {"type": 2, "price": 100.0, "volume": 40}])
+            s.handle("GatewayQuote", ["CON", {"lastPrice": 100.25, "bestBid": 100.0, "bestAsk": 100.25}])
+            rec.close()
+            files = os.listdir(d)
+            with gzip.open(os.path.join(d, files[0]), "rt") as f:
+                rows = [json.loads(l) for l in f]
+            self.assertEqual([r[0] for r in rows], ["T", "D", "Q"])
+            self.assertEqual(rows[0][2:5], [100.25, 3, 1])
 
 
 class BacktestTests(unittest.TestCase):
