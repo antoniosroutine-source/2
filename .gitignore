@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+bot_log.jsonl
+risk_state.json
+bot_state.json.tmp

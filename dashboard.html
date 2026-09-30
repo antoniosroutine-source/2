@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MFP Bot Dashboard</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #2a313c; --text: #e6edf3; --muted: #8b949e;
+    --up: #2ea043; --down: #f85149; --accent: #58a6ff; --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; }
+  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr; max-width: 1200px; margin: 0 auto; }
+  @media (min-width: 900px) { main { grid-template-columns: 2fr 1fr; } .wide { grid-column: 1 / -1; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; }
+  .muted { color: var(--muted); }
+  .switch { position: relative; width: 46px; height: 26px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #3a414c; border-radius: 26px; cursor: pointer; transition: .2s; }
+  .slider:before { content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  input:checked + .slider { background: var(--up); }
+  input:checked + .slider:before { transform: translateX(20px); }
+  .master .slider { background: var(--down); }
+  .master input:checked + .slider { background: var(--up); }
+  .bar { height: 10px; background: #0b0e13; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
+  .bar > div { height: 100%; background: var(--up); transition: width .3s; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-top: 8px; }
+  .stat { background: #0b0e13; border-radius: 6px; padding: 8px; }
+  .stat b { display: block; font-size: 16px; }
+  canvas { width: 100%; height: 320px; display: block; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .pos { color: var(--up); } .neg { color: var(--down); }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #0b0e13; border: 1px solid var(--line); }
+  #conn.bad { color: var(--down); }
+</style>
+</head>
+<body>
+<header>
+  <h1>MFP Trading Bot</h1>
+  <span id="conn" class="pill">connecting…</span>
+  <label class="row master" style="margin:0">
+    <span>Master switch</span>
+    <span class="switch"><input type="checkbox" id="master"><span class="slider"></span></span>
+  </label>
+</header>
+<main>
+  <section class="panel">
+    <h2>BTC price (1m) · liquidity &amp; FVG</h2>
+    <canvas id="chart"></canvas>
+    <div class="muted" id="sbstate" style="margin-top:8px"></div>
+  </section>
+  <section class="panel">
+    <h2>Risk</h2>
+    <div class="row"><span>Equity</span><b id="equity">–</b></div>
+    <div class="row"><span>Daily loss</span><span id="dailyTxt" class="muted">–</span></div>
+    <div class="bar"><div id="dailyBar" style="width:0"></div></div>
+    <div class="row" style="margin-top:12px"><span>Max loss (drawdown)</span><span id="ddTxt" class="muted">–</span></div>
+    <div class="bar"><div id="ddBar" style="width:0"></div></div>
+    <p class="muted" style="font-size:12px">Bars fill toward the bot's halt level (75% of the firm limit).</p>
+    <h2 style="margin-top:16px">Strategies</h2>
+    <div id="strategies"></div>
+  </section>
+  <section class="panel wide">
+    <h2>Trade log</h2>
+    <div class="tablewrap">
+      <table><thead><tr><th>Time</th><th>Event</th><th>Side</th><th>Entry</th><th>TP</th><th>SL</th><th>Size</th><th>P&amp;L</th><th>Detail</th></tr></thead>
+      <tbody id="log"></tbody></table>
+    </div>
+  </section>
+</main>
+<script>
+const API = location.port === "8765" ? "" : "http://127.0.0.1:8765";
+const $ = id => document.getElementById(id);
+const fmt = (n, d = 2) => n == null ? "–" : Number(n).toLocaleString(undefined, {minimumFractionDigits: d, maximumFractionDigits: d});
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+async function post(path, body) {
+  const r = await fetch(API + path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  return r.json();
+}
+
+$("master").addEventListener("change", async e => {
+  if (e.target.checked && !confirm("Start trading? The bot will place real orders on the configured account.")) { e.target.checked = false; return; }
+  renderStatus(await post("/master", {on: e.target.checked}));
+});
+
+function statsFor(events, sid) {
+  const closed = events.filter(e => e.event === "trade_closed" && e.strategy === sid);
+  const wins = closed.filter(e => e.pnl > 0), losses = closed.filter(e => e.pnl <= 0);
+  const gw = wins.reduce((a, e) => a + e.pnl, 0), gl = -losses.reduce((a, e) => a + e.pnl, 0);
+  return {n: closed.length, w: wins.length, l: losses.length, pnl: gw - gl,
+          wr: closed.length ? wins.length / closed.length * 100 : null, pf: gl > 0 ? gw / gl : (gw > 0 ? Infinity : null)};
+}
+
+let lastEvents = [];
+function renderStatus(st) {
+  $("master").checked = !!st.master;
+  const box = $("strategies");
+  box.innerHTML = "";
+  for (const [sid, s] of Object.entries(st.strategies)) {
+    const k = statsFor(lastEvents, sid);
+    const el = document.createElement("div");
+    el.innerHTML = `
+      <div class="row"><span>${s.label} <span class="pill">${s.running ? "running" : "stopped"}</span></span>
+        <label class="switch"><input type="checkbox" ${s.enabled ? "checked" : ""}><span class="slider"></span></label></div>
+      <div class="stats">
+        <div class="stat"><span class="muted">Win rate</span><b>${k.wr == null ? "–" : fmt(k.wr, 0) + "%"}</b></div>
+        <div class="stat"><span class="muted">W / L</span><b>${k.w} / ${k.l}</b></div>
+        <div class="stat"><span class="muted">P&amp;L</span><b class="${k.pnl >= 0 ? "pos" : "neg"}">${fmt(k.pnl)}</b></div>
+        <div class="stat"><span class="muted">Profit factor</span><b>${k.pf == null ? "–" : k.pf === Infinity ? "∞" : fmt(k.pf)}</b></div>
+      </div>`;
+    el.querySelector("input").addEventListener("change", async e => renderStatus(await post("/strategy/" + sid, {enabled: e.target.checked})));
+    box.appendChild(el);
+  }
+}
+
+function renderRisk(r) {
+  if (!r) return;
+  $("equity").textContent = "$" + fmt(r.equity);
+  $("dailyTxt").textContent = `$${fmt(r.daily_loss)} / $${fmt(r.daily_limit)}`;
+  $("ddTxt").textContent = `$${fmt(r.drawdown)} / $${fmt(r.drawdown_limit)}`;
+  for (const [bar, used, lim] of [["dailyBar", r.daily_loss, r.daily_limit], ["ddBar", r.drawdown, r.drawdown_limit]]) {
+    const pct = Math.min(100, lim ? used / lim * 100 : 0);
+    $(bar).style.width = pct + "%";
+    $(bar).style.background = pct > 80 ? css("--down") : pct > 50 ? css("--warn") : css("--up");
+  }
+}
+
+function renderChart(candles, last, trades) {
+  const cv = $("chart"), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, H);
+  if (!candles.length) { g.fillStyle = css("--muted"); g.fillText("Waiting for candles…", 12, 20); return; }
+  const sb = last && last.sb || {};
+  let lo = Math.min(...candles.map(c => c.l)), hi = Math.max(...candles.map(c => c.h));
+  const lv = sb.levels; if (lv) { lo = Math.min(lo, lv.sell_side); hi = Math.max(hi, lv.buy_side); }
+  const pad = (hi - lo) * 0.05 || 1; lo -= pad; hi += pad;
+  const right = 70, y = p => (hi - p) / (hi - lo) * (H - 10) + 5, cw = (W - right) / candles.length;
+  g.font = "11px system-ui"; g.fillStyle = css("--muted");
+  for (let i = 0; i <= 4; i++) { const p = lo + (hi - lo) * i / 4; g.fillText(fmt(p, 1), W - right + 6, y(p) + 4); }
+  if (sb.setup) {
+    g.fillStyle = "rgba(88,166,255,.18)";
+    g.fillRect(0, y(sb.setup.zone_high), W - right, y(sb.setup.zone_low) - y(sb.setup.zone_high));
+  }
+  const hline = (p, color, label) => { g.strokeStyle = color; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(0, y(p)); g.lineTo(W - right, y(p)); g.stroke(); g.setLineDash([]); g.fillStyle = color; g.fillText(label, 4, y(p) - 3); };
+  if (lv) { hline(lv.buy_side, css("--warn"), "buy-side liquidity"); hline(lv.sell_side, css("--warn"), "sell-side liquidity"); }
+  candles.forEach((c, i) => {
+    const x = i * cw + cw / 2, up = c.c >= c.o;
+    g.strokeStyle = g.fillStyle = up ? css("--up") : css("--down");
+    g.beginPath(); g.moveTo(x, y(c.h)); g.lineTo(x, y(c.l)); g.stroke();
+    const top = y(Math.max(c.o, c.c)), h = Math.max(1, Math.abs(y(c.o) - y(c.c)));
+    g.fillRect(x - Math.max(1, cw * 0.35), top, Math.max(2, cw * 0.7), h);
+  });
+  const t0 = candles[0].t, span = 60;
+  for (const t of trades) {
+    const i = Math.floor((t.opened - t0) / span); if (i < 0 || i >= candles.length) continue;
+    const x = i * cw + cw / 2;
+    g.fillStyle = css("--accent"); g.beginPath();
+    if (t.side === "long") { g.moveTo(x, y(t.entry) + 2); g.lineTo(x - 5, y(t.entry) + 10); g.lineTo(x + 5, y(t.entry) + 10); }
+    else { g.moveTo(x, y(t.entry) - 2); g.lineTo(x - 5, y(t.entry) - 10); g.lineTo(x + 5, y(t.entry) - 10); }
+    g.fill();
+  }
+}
+
+const SHOWN = new Set(["trade_open", "trade_closed", "signal", "risk_block", "order_not_filled", "trade_aborted", "exit_orders_failed", "position_closed_unprotected", "critical", "error", "start", "stop", "skip"]);
+function renderLog(events) {
+  const rows = events.filter(e => SHOWN.has(e.event)).slice(-100).reverse();
+  $("log").innerHTML = rows.map(e => {
+    const pnl = e.pnl == null ? "" : `<span class="${e.pnl >= 0 ? "pos" : "neg"}">${fmt(e.pnl)}</span>`;
+    const detail = e.reason || e.error || e.message || e.status || "";
+    return `<tr><td>${new Date(e.ts * 1000).toLocaleString()}</td><td>${e.event}</td><td>${e.side || ""}</td>
+      <td>${e.entry ? fmt(e.entry, 1) : ""}</td><td>${e.tp ? fmt(e.tp, 1) : e.target ? fmt(e.target, 1) : ""}</td>
+      <td>${e.sl ? fmt(e.sl, 1) : e.stop ? fmt(e.stop, 1) : ""}</td><td>${e.size || ""}</td><td>${pnl}</td>
+      <td class="muted">${String(detail).replace(/</g, "&lt;").slice(0, 120)}</td></tr>`;
+  }).join("");
+}
+
+async function refresh() {
+  try {
+    const [st, events] = await Promise.all([fetch(API + "/status").then(r => r.json()), fetch(API + "/log?limit=3000").then(r => r.json())]);
+    lastEvents = events;
+    $("conn").textContent = "connected"; $("conn").classList.remove("bad");
+    renderStatus(st);
+    const candles = events.filter(e => e.event === "candle").slice(-120);
+    const last = candles[candles.length - 1];
+    renderRisk(last && last.risk);
+    renderChart(candles, last, events.filter(e => e.event === "trade_open"));
+    const sb = last && last.sb;
+    $("sbstate").textContent = !sb ? "" : sb.warming_up ? "Warming up: collecting candles for liquidity levels…"
+      : sb.setup ? `Setup: ${sb.setup.side} FVG ${fmt(sb.setup.zone_low, 1)}–${fmt(sb.setup.zone_high, 1)}, stop ${fmt(sb.setup.stop, 1)}`
+      : sb.sweep ? `Liquidity swept (${sb.sweep.dir} bias), waiting for displacement + FVG`
+      : "Waiting for a Silver Bullet window (NY 03–04, 10–11, 14–15) and a liquidity sweep";
+    renderLog(events);
+  } catch (e) {
+    $("conn").textContent = "server offline"; $("conn").classList.add("bad");
+  }
+}
+refresh(); setInterval(refresh, 3000);
+window.addEventListener("resize", refresh);
+</script>
+</body>
+</html>

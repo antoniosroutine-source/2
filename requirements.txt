@@ -1,0 +1,3 @@
+# The bot uses only the Python standard library.
+# Windows has no built-in timezone database, which the Silver Bullet windows need:
+tzdata; sys_platform == "win32"
