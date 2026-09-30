@@ -18,19 +18,20 @@ MAX_NOTIONAL_MULT = 2.0       # position notional never exceeds 2x equity
 
 # --- Strategy ------------------------------------------------------------------
 STRATEGY_ID = "silver_bullet"
-MARKET = "binance|BTCUSDT"
+MARKET = os.environ.get("FPERP_MARKET", "NAS100")  # Nasdaq-100 perp; a plain symbol is looked up
+                                                   # in MFP's market list at startup ("venue|SYMBOL" is used as-is)
 SIDE_LEVERAGE = 5
 MARGIN_MODE = "isolated"
 RR = 2.0                      # take profit at 2x the stop distance
 LIQUIDITY_LOOKBACK = 60       # candles used to find buy/sell-side liquidity
-STOP_BUFFER_PCT = 0.0005      # stop sits this far beyond the sweep extreme
-MIN_STOP_PCT = 0.002          # stop never closer than 0.2% from entry
+STOP_BUFFER_PCT = 0.0002      # stop sits this far beyond the sweep extreme (~6 pts at 30,000)
+MIN_STOP_PCT = 0.0015         # stop never closer than 0.15% from entry (~45 pts at 30,000)
 SETUP_EXPIRY_BARS = 15        # a sweep/FVG setup lapses after this many candles
 POLL_INTERVAL_SEC = 5         # how often the price is sampled
 CANDLE_SEC = 60               # 1-minute candles
-QUOTE_SIZE = 0.001            # size used when asking for a price quote
-SIZE_STEP = 0.001             # order size is rounded down to this increment
-PRICE_TICK = 0.1              # TP/SL prices are rounded to this increment
+QUOTE_SIZE = 0.01             # size used when asking for a price quote
+SIZE_STEP = 0.01              # order size is rounded down to this increment (overridden by market info if MFP provides it)
+PRICE_TICK = 0.1              # TP/SL prices are rounded to this increment (overridden by market info if MFP provides it)
 
 # --- Files / dashboard -----------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))

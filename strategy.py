@@ -9,7 +9,7 @@ Rules implemented (per Silver Bullet window, New York time 03-04, 10-11, 14-15):
      bullish FVG: candle[-3].high < candle[-1].low and candle[-2] closes up
 4. Entry: when price retraces into the FVG. Stop beyond the sweep extreme (plus a small
    buffer, never tighter than MIN_STOP_PCT). Target = RR x risk.
-5. At most one trade per window. Setups expire after SETUP_EXPIRY_BARS or at window end.
+5. At most one trade per window, weekdays only. Setups expire after SETUP_EXPIRY_BARS or at window end.
 """
 import datetime as dt
 from collections import deque
@@ -59,6 +59,8 @@ class CandleBuilder:
 def window_key(ts, windows=SILVER_BULLET_WINDOWS):
     """(date, start_hour) of the Silver Bullet window containing ts, else None."""
     t = dt.datetime.fromtimestamp(ts, NY)
+    if t.weekday() >= 5:  # the Nasdaq cash session is closed at weekends
+        return None
     for start, end in windows:
         if start <= t.hour < end:
             return (t.date().isoformat(), start)

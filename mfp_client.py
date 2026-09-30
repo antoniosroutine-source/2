@@ -94,6 +94,10 @@ class MFPClient:
         return float(self.get_account(account_id)["risk"]["equity"])
 
     # -- market data ----------------------------------------------------------
+    def list_markets(self):
+        result = self._request("GET", "/markets")
+        return result if isinstance(result, list) else pick(result, "markets", "items", default=[])
+
     def get_quote(self, market_id, side="buy", size=0.001):
         return self._request("GET", f"/markets/{self._seg(market_id)}/quote",
                              params={"side": side, "size": size})

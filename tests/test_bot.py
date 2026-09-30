@@ -102,6 +102,9 @@ class StrategyTests(unittest.TestCase):
         self.assertIsNone(window_key(ny_ts(11, 0)))
         self.assertIsNone(window_key(ny_ts(9, 59)))
 
+    def test_no_windows_at_weekends(self):
+        self.assertIsNone(window_key(ny_ts(10, 30, day=3)))  # Saturday 3 Oct 2026
+
     def test_candle_builder(self):
         b = CandleBuilder(60)
         self.assertIsNone(b.update(0, 10))
@@ -254,6 +257,24 @@ class BotTests(unittest.TestCase):
         c.get_equity = lambda a: 24_600.0
         self.bot(c).step(now=ny_ts(12, 0))
         self.assertEqual(c.closed, ["p9"])
+
+    def test_resolve_market(self):
+        c = FakeClient()
+        c.list_markets = lambda: [{"id": "binance|BTCUSDT", "symbol": "BTCUSDT"},
+                                  {"id": "xyz|NAS100", "symbol": "NAS100", "tick_size": 0.5}]
+        self.assertEqual(agent.resolve_market(c, "NAS100")[0], "xyz|NAS100")
+        self.assertEqual(agent.resolve_market(c, "nas100")[1]["tick_size"], 0.5)
+        with self.assertRaises(SystemExit):
+            agent.resolve_market(c, "SPX500")
+
+    def test_resolve_market_falls_back_to_exact_id(self):
+        c = FakeClient()
+        def boom():
+            raise MFPError(404, "no catalog")
+        c.list_markets = boom
+        self.assertEqual(agent.resolve_market(c, "xyz|NAS100"), ("xyz|NAS100", {}))
+        with self.assertRaises(SystemExit):
+            agent.resolve_market(c, "NAS100")
 
     def test_key_guard(self):
         with self.assertRaises(SystemExit):

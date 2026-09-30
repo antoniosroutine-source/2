@@ -1,6 +1,6 @@
 # MFP Trading Bot: ICT Silver Bullet
 
-This is an automated trading bot for a **MyFundedPerps Prime ($25K)** account. It trades BTC perpetuals (`binance|BTCUSDT`) using the ICT Silver Bullet strategy. A local dashboard gives you a master kill switch, a toggle for each strategy, risk bars and a trade log.
+This is an automated trading bot for a **MyFundedPerps Prime ($25K)** account. It trades the **Nasdaq-100 perpetual (NAS100)** using the ICT Silver Bullet strategy. A local dashboard gives you a master kill switch, a toggle for each strategy, risk bars and a trade log.
 
 The API details come from the First Tick Trading build guide. Nothing here has been checked against MFP's official docs or tested on the live API yet. **Test on the sandbox first.**
 
@@ -15,16 +15,19 @@ The API details come from the First Tick Trading build guide. Nothing here has b
 Optional environment variables:
 - `FPERP_ACCOUNT_ID`: which account to trade. Defaults to the first account.
 - `FPERP_BASE_URL`: the API URL. Defaults to the sandbox.
+- `FPERP_MARKET`: the market. Defaults to `NAS100`, which the bot looks up in MFP's market list at startup. If more than one market matches, it stops and lists the Nasdaq-like ids so you can set the exact one (`venue|SYMBOL`).
+
+**Never paste an API key into chat or commit it to the repo.** Keep it only in the environment variable. If a key is ever exposed, revoke it in the MFP dashboard and create a new one.
 
 To go live, set `FPERP_BASE_URL=https://developers.myfundedperpetuals.com/v1` and use a live `fp_live_` key. The bot won't start if the key type and the URL don't match.
 
 ## Strategy (`strategy.py`)
-The bot builds 1-minute candles by sampling the mid price every 5 s. It only trades during Silver Bullet windows (New York time 03–04, 10–11 and 14–15):
+The bot builds 1-minute candles by sampling the mid price every 5 s. It only trades during Silver Bullet windows on weekdays (New York time 03–04, 10–11 and 14–15):
 1. **Liquidity:** the high and low of the previous 60 candles.
 2. **Sweep:** price trades through one of those levels.
 3. **Displacement + FVG:** a move against the sweep that leaves a fair value gap.
 4. **Entry:** when price retraces into the FVG.
-   - The stop goes just beyond the sweep extreme, and never closer than 0.2% from entry.
+   - The stop goes 0.02% beyond the sweep extreme (about 6 points), and never closer than 0.15% from entry (about 45 points).
    - The take-profit is set at 2R.
 5. There is at most one trade per window. At most one position is open at a time.
 
@@ -61,6 +64,7 @@ After a start, the bot needs about 60 minutes of candles before it can find liqu
 `python -m unittest discover -s tests`. These run against a mocked API.
 
 ## Known assumptions to verify against the MFP OpenAPI spec
+- **NAS100 market id, contract size, size step and tick size.** Size step and tick come from the market list if MFP provides them. The defaults are 0.01 and 0.1.
 - **Order body fields:** `account_id`, `market_id`, `side` (`buy`/`sell`), `type: "market"`, `margin_mode`.
 - **Response field names:** order `status`, and position `id` / `size` / `entry_price`. Several alternatives are accepted.
 - **Automation policy:** MFP's policy bans HFT-like behaviour. This bot polls every 5 s and trades at most 3 times a day, but confirm this is acceptable.

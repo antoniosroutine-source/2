@@ -2,7 +2,7 @@
   "master": false,
   "strategies": {
     "silver_bullet": {
-      "label": "ICT Silver Bullet (BTC, 1m)",
+      "label": "ICT Silver Bullet (Nasdaq-100, 1m)",
       "enabled": true,
       "script": "agent.py"
     }

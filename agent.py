@@ -18,8 +18,32 @@ def log_event(event, **fields):
     print(json.dumps(rec), flush=True)
 
 
-def round_tick(price, tick=config.PRICE_TICK):
+def round_tick(price, tick=None):
+    tick = tick or config.PRICE_TICK
     return round(round(price / tick) * tick, 8)
+
+
+def resolve_market(client, wanted):
+    """Turn a symbol like "NAS100" into MFP's market id. Returns (market_id, market_info)."""
+    try:
+        markets = client.list_markets()
+    except (MFPError, OSError) as e:
+        if "|" in wanted:
+            return wanted, {}
+        sys.exit(f"Could not load MFP's market list ({e}). Set FPERP_MARKET to the exact id.")
+    ids = lambda m: [str(pick(m, k, default="")) for k in ("id", "market_id", "symbol", "name", "base")]
+    exact = [m for m in markets if any(v.lower() == wanted.lower() for v in ids(m))]
+    if not exact and "|" not in wanted:
+        exact = [m for m in markets if any(v.lower().endswith(wanted.lower()) for v in ids(m))]
+    if len(exact) == 1:
+        m = exact[0]
+        return str(pick(m, "id", "market_id")), m
+    if "|" in wanted:
+        return wanted, {}
+    near = [pick(m, "id", "market_id") for m in markets
+            if any(k in " ".join(ids(m)).lower() for k in ("nas", "ndx", "us100", "xyz100", "nq"))]
+    sys.exit(f"Could not pick one market for {wanted!r}. Nasdaq-like markets found: {near or 'none'}. "
+             "Set FPERP_MARKET to the exact id.")
 
 
 def check_key(api_key, base_url):
@@ -42,8 +66,9 @@ def is_open(pos):
 
 
 class Bot:
-    def __init__(self, client, account_id, risk, strategy, sleep=time.sleep):
+    def __init__(self, client, account_id, risk, strategy, market=config.MARKET, sleep=time.sleep):
         self.client = client
+        self.market = market
         self.account_id = account_id
         self.risk = risk
         self.strategy = strategy
@@ -54,7 +79,7 @@ class Bot:
 
     def find_position(self):
         for pos in self.client.list_positions(self.account_id):
-            if market_matches(pos, config.MARKET) and is_open(pos):
+            if market_matches(pos, self.market) and is_open(pos):
                 return pos
         return None
 
@@ -99,7 +124,7 @@ class Bot:
             return
 
         side = "buy" if sig["side"] == "long" else "sell"
-        order = self.client.place_market_order(self.account_id, config.MARKET, side, size, entry,
+        order = self.client.place_market_order(self.account_id, self.market, side, size, entry,
                                                config.SIDE_LEVERAGE, config.MARGIN_MODE)
         order = self.client.wait_for_order(pick(order, "id", "order_id"))
         status = str(order.get("status", "")).lower()
@@ -137,7 +162,7 @@ class Bot:
 
     def step(self, now=None):
         now = now if now is not None else time.time()
-        price = self.client.get_mid(config.MARKET, config.QUOTE_SIZE)
+        price = self.client.get_mid(self.market, config.QUOTE_SIZE)
         equity = self.client.get_equity(self.account_id)
         snap = self.risk.snapshot(equity)
 
@@ -167,7 +192,7 @@ class Bot:
             self.execute(sig, equity)
 
     def run(self):
-        log_event("start", account_id=self.account_id, base_url=config.BASE_URL)
+        log_event("start", account_id=self.account_id, market=self.market, base_url=config.BASE_URL)
         errors = 0
         while self.running:
             try:
@@ -192,12 +217,15 @@ def main():
         if not accounts:
             sys.exit("No accounts found for this API key.")
         account_id = pick(accounts[0], "id", "account_id")
+    market, info = resolve_market(client, config.MARKET)
+    config.SIZE_STEP = float(pick(info, "size_increment", "step_size", "lot_size", default=config.SIZE_STEP))
+    config.PRICE_TICK = float(pick(info, "tick_size", "price_increment", default=config.PRICE_TICK))
     risk = RiskManager(config.STARTING_BALANCE, config.MAX_DAILY_LOSS_PCT, config.MAX_DRAWDOWN_PCT,
                        config.RISK_BUFFER, config.RISK_PER_TRADE_PCT, config.MAX_NOTIONAL_MULT,
                        config.SIZE_STEP, config.RISK_STATE_FILE)
     strategy = SilverBullet(config.LIQUIDITY_LOOKBACK, config.RR, config.STOP_BUFFER_PCT,
                             config.MIN_STOP_PCT, config.SETUP_EXPIRY_BARS)
-    bot = Bot(client, account_id, risk, strategy)
+    bot = Bot(client, account_id, risk, strategy, market)
 
     def stop(*_):
         bot.running = False
