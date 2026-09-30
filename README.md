@@ -1,6 +1,6 @@
-# MFP Trading Bot: ICT Silver Bullet
+# MFP Trading Bot: Asia range sweep
 
-This is an automated trading bot for a **MyFundedPerps 1-Step Select ($10K)** account. It trades MFP's **Nasdaq-100 perpetual, XYZ100** (`hyperliquid|xyz:XYZ100`), using the ICT Silver Bullet strategy. A local dashboard gives you a master kill switch, a toggle for each strategy, risk bars and a trade log.
+This is an automated trading bot for a **MyFundedPerps 1-Step Select ($10K)** account. It trades MFP's **Nasdaq-100 perpetual, XYZ100** (`hyperliquid|xyz:XYZ100`), using an Asia-session range liquidity sweep (fakeout) strategy. The ICT Silver Bullet strategy is still available (`FPERP_STRATEGY=silver_bullet`). A local dashboard gives you a master kill switch, a toggle for each strategy, risk bars and a trade log.
 
 The API calls follow MFP's official docs and OpenAPI spec (https://docs.myfundedperpetuals.com). The API is in beta and the bot has not placed a real order yet. **Test on the sandbox first.**
 
@@ -22,18 +22,20 @@ Optional environment variables:
 
 **Never paste an API key into chat or commit it to the repo.** Keep it only in the environment variable. If a key is ever exposed, revoke it in the MFP dashboard and create a new one.
 
-## Strategy (`strategy.py`)
-The bot builds 1-minute candles by sampling the mid price every 5 s. It only trades during Silver Bullet windows on weekdays (New York time 03–04, 10–11 and 14–15):
-1. **Liquidity:** the high and low of the previous 60 candles.
-2. **Sweep:** price trades through one of those levels.
-3. **Displacement + FVG:** a move against the sweep that leaves a fair value gap.
-4. **Entry:** when price retraces into the FVG.
-   - The stop goes 0.02% beyond the sweep extreme (about 6 points), and never closer than 0.15% from entry (about 45 points).
-   - The take-profit is 3.33× the stop distance (risk $100 to make about $333).
-   - The TP and SL are attached to the entry order, so MFP creates them with the fill.
-5. There is at most one trade per window. At most one position is open at a time.
+## Strategy: Asia range sweep (`strategy.py`, `AsiaSweep`)
+All times are New York time. Sessions start Sunday to Thursday evenings.
+1. **Range:** the high and low from 19:00 to 20:00.
+2. **Sweep (fakeout):** from 20:00 to 01:00, a 1-minute candle trades beyond the range and closes back inside.
+3. **Entry:** fade the move back into the range. Short after a sweep of the high, long after a sweep of the low.
+   - The stop goes beyond the sweep wick by 10% of the range width, and at least 50 points from entry.
+   - The take-profit is 3.33× the stop distance.
+4. **Exit:** the TP or SL, or a close at 03:00 (London open) if neither is hit.
+5. **Filters:** at most one trade per session. The session is skipped if the range is under 0.1% of price, or if price closes a full range width outside it (a trend session).
 
-After a start, the bot needs about 60 minutes of candles before it can find liquidity levels.
+At startup the bot loads the last 12 hours of 1-minute candles from Hyperliquid's public API, so it knows tonight's range straight away. A sweep that happened before the bot started is never traded late.
+
+### Backtest (rough)
+This was a small test on 56 Asia sessions of Dukascopy Nasdaq-100 1-minute data, with MFP fees plus 1.5 points of spread per side. It used a 60-minute range and a stop of at least 50 points. Across target settings it was slightly profitable (profit factor 1.14–1.25 over 39 trades), with drawdowns of 6–9R along the way. Without the 50-point minimum stop, costs made every version lose. **39 trades is far too few to prove an edge.** Treat live results as the real test.
 
 ## Risk (`risk.py`, `config.py`)
 MFP's 1-Step Select rules: **3% daily loss ($300)**, **3% static max drawdown (floor $9,700)** and a **9% profit target ($900)**, all on the starting balance and measured on equity including open P&L. The daily loss resets at **midnight New York time**.
@@ -45,9 +47,9 @@ MFP's 1-Step Select rules: **3% daily loss ($300)**, **3% static max drawdown (f
 | Bot halts at | 75% of each limit ($225) |
 | MFP room check | Also halts if MFP reports less than $50 left above either firm floor (`SERVER_ROOM_RESERVE_USD`). This covers losses the bot didn't see, such as manual trades or a restart mid-day. |
 | Risk per trade | Up to $100 if the stop is hit |
-| Target | 3.33× the stop distance, about +$333 on a full-size trade |
+| Target | 3.33× the stop distance |
 | Losses before halt | 2 full stop-outs (a third would pass $225) |
-| Position cap | 3x equity notional ($30K), 5x isolated leverage (XYZ100 allows up to 12x). On a stop tighter than about 0.33% (~80 points), this cap keeps the risk below $100. |
+| Position cap | 3x equity notional ($30K), 5x isolated leverage (XYZ100 allows up to 12x). With the 50–100 point stops this strategy uses, this cap keeps the risk at about $50–100 per trade. |
 
 - Before each trade, the bot checks whether that trade's full stop-out would cross a halt level. If it would, the trade is skipped.
 - If a limit is hit while a position is open, the bot closes the position.

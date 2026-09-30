@@ -1,8 +1,8 @@
 {
   "master": false,
   "strategies": {
-    "silver_bullet": {
-      "label": "ICT Silver Bullet (Nasdaq-100, 1m)",
+    "asia_sweep": {
+      "label": "Asia range sweep / fakeout (Nasdaq-100, 1m)",
       "enabled": true,
       "script": "agent.py"
     }

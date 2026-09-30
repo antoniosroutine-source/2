@@ -4,11 +4,12 @@ import os
 import signal
 import sys
 import time
+import urllib.request
 
 import config
 from mfp_client import MFPClient, MFPError, pick
 from risk import RiskManager
-from strategy import CandleBuilder, SilverBullet
+from strategy import AsiaSweep, Candle, CandleBuilder, SilverBullet
 
 
 def log_event(event, **fields):
@@ -55,6 +56,52 @@ def resolve_market(client, wanted):
             if any(k in " ".join(ids(m)).lower() for k in ("nas", "ndx", "us100", "xyz100", "nq"))]
     sys.exit(f"Could not pick one market for {wanted!r}. Nasdaq-like markets found: {near or 'none'}. "
              "Set FPERP_MARKET to the exact id.")
+
+
+def make_strategy(strategy_id=None):
+    strategy_id = strategy_id or config.STRATEGY_ID
+    if strategy_id == "asia_sweep":
+        return AsiaSweep(config.RR, config.ASIA_RANGE_MIN, config.ASIA_TRADE_UNTIL_MIN, config.ASIA_EXIT_MIN,
+                         config.ASIA_BUF_FRAC, config.ASIA_MIN_STOP_PTS, config.ASIA_MIN_RANGE_PCT)
+    if strategy_id == "silver_bullet":
+        return SilverBullet(config.LIQUIDITY_LOOKBACK, config.RR, config.STOP_BUFFER_PCT,
+                            config.MIN_STOP_PCT, config.SETUP_EXPIRY_BARS)
+    sys.exit(f"Unknown strategy {strategy_id!r}")
+
+
+def fetch_history(market, hours=12, now=None):
+    """Recent 1-minute candles from Hyperliquid's public API (MFP fills Hyperliquid markets from
+    that venue's book), so the bot knows the current range at startup instead of waiting."""
+    provider, _, coin = market.partition("|")
+    if provider != "hyperliquid" or not coin:
+        return []
+    end = int((now or time.time()) * 1000)
+    body = json.dumps({"type": "candleSnapshot", "req": {"coin": coin, "interval": "1m",
+                                                         "startTime": end - hours * 3_600_000,
+                                                         "endTime": end}}).encode()
+    req = urllib.request.Request("https://api.hyperliquid.xyz/info", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        rows = json.loads(resp.read())
+    return [Candle(r["t"] / 1000, float(r["o"]), float(r["h"]), float(r["l"]), float(r["c"])) for r in rows]
+
+
+def warm_up(strategy, market, now=None):
+    """Replay completed candles into the strategy. Past sweeps are never traded late."""
+    now = now or time.time()
+    try:
+        candles = fetch_history(market, now=now)
+    except (OSError, ValueError, KeyError) as e:
+        log_event("error", error=f"history unavailable, building candles live instead: {e}")
+        return 0
+    done = [c for c in candles if c.start + 60 <= now]
+    for c in done:
+        if isinstance(strategy, AsiaSweep):
+            strategy.on_candle(c, live=False)
+        else:
+            strategy.on_candle(c)
+    log_event("warm_up", candles=len(done), sb=strategy.state())
+    return len(done)
 
 
 def check_key(api_key, base_url):
@@ -193,7 +240,7 @@ class Bot:
         if protected:
             self.open_trade = {"position_id": pick(pos, "id", "position_id"), "equity_at_entry": equity,
                                "side": sig["side"], "entry": fill, "tp": tp, "sl": sl, "size": size,
-                               "opened": time.time()}
+                               "opened": time.time(), "exit_by": sig.get("exit_by")}
             log_event("trade_open", **self.open_trade)
 
     def _close_now(self, pos, reason):
@@ -227,6 +274,8 @@ class Bot:
         if pos is not None:
             if halted:
                 self._close_now(pos, f"risk limit: {reason}")
+            elif self.open_trade and self.open_trade.get("exit_by") and now >= self.open_trade["exit_by"]:
+                self._close_now(pos, "session end")
             return
         if self.open_trade is not None:
             pnl = equity - self.open_trade["equity_at_entry"]
@@ -289,8 +338,8 @@ def main():
     risk = RiskManager(starting_balance, config.MAX_DAILY_LOSS_PCT, config.MAX_DRAWDOWN_PCT,
                        config.RISK_BUFFER, config.RISK_PER_TRADE_USD, config.MAX_NOTIONAL_MULT,
                        config.SIZE_STEP, config.RISK_STATE_FILE, config.SERVER_ROOM_RESERVE_USD)
-    strategy = SilverBullet(config.LIQUIDITY_LOOKBACK, config.RR, config.STOP_BUFFER_PCT,
-                            config.MIN_STOP_PCT, config.SETUP_EXPIRY_BARS)
+    strategy = make_strategy()
+    warm_up(strategy, market)
     bot = Bot(client, account_id, risk, strategy, market)
 
     def stop(*_):

@@ -142,6 +142,7 @@ function renderChart(candles, last, trades) {
   const sb = last && last.sb || {};
   let lo = Math.min(...candles.map(c => c.l)), hi = Math.max(...candles.map(c => c.h));
   const lv = sb.levels; if (lv) { lo = Math.min(lo, lv.sell_side); hi = Math.max(hi, lv.buy_side); }
+  const ar = sb.range_high != null ? sb : null; if (ar) { lo = Math.min(lo, ar.range_low); hi = Math.max(hi, ar.range_high); }
   const pad = (hi - lo) * 0.05 || 1; lo -= pad; hi += pad;
   const right = 70, y = p => (hi - p) / (hi - lo) * (H - 10) + 5, cw = (W - right) / candles.length;
   g.font = "11px system-ui"; g.fillStyle = css("--muted");
@@ -152,6 +153,7 @@ function renderChart(candles, last, trades) {
   }
   const hline = (p, color, label) => { g.strokeStyle = color; g.setLineDash([4, 4]); g.beginPath(); g.moveTo(0, y(p)); g.lineTo(W - right, y(p)); g.stroke(); g.setLineDash([]); g.fillStyle = color; g.fillText(label, 4, y(p) - 3); };
   if (lv) { hline(lv.buy_side, css("--warn"), "buy-side liquidity"); hline(lv.sell_side, css("--warn"), "sell-side liquidity"); }
+  if (ar) { hline(ar.range_high, css("--warn"), "Asia range high"); hline(ar.range_low, css("--warn"), "Asia range low"); }
   candles.forEach((c, i) => {
     const x = i * cw + cw / 2, up = c.c >= c.o;
     g.strokeStyle = g.fillStyle = up ? css("--up") : css("--down");
@@ -194,7 +196,7 @@ async function refresh() {
     renderRisk(last && last.risk);
     renderChart(candles, last, events.filter(e => e.event === "trade_open"));
     const sb = last && last.sb;
-    $("sbstate").textContent = !sb ? "" : sb.warming_up ? "Warming up: collecting candles for liquidity levels…"
+    $("sbstate").textContent = !sb ? "" : sb.note ? `Asia sweep: ${sb.note}` : sb.warming_up ? "Warming up: collecting candles for liquidity levels…"
       : sb.setup ? `Setup: ${sb.setup.side} FVG ${fmt(sb.setup.zone_low, 1)}–${fmt(sb.setup.zone_high, 1)}, stop ${fmt(sb.setup.stop, 1)}`
       : sb.sweep ? `Liquidity swept (${sb.sweep.dir} bias), waiting for displacement + FVG`
       : "Waiting for a Silver Bullet window (NY 03–04, 10–11, 14–15) and a liquidity sweep";

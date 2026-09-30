@@ -15,7 +15,7 @@ import config  # noqa: E402
 import mfp_client  # noqa: E402
 from mfp_client import MFPClient, MFPError  # noqa: E402
 from risk import RiskManager  # noqa: E402
-from strategy import NY, Candle, CandleBuilder, SilverBullet, window_key  # noqa: E402
+from strategy import NY, AsiaSweep, Candle, CandleBuilder, SilverBullet, asia_session, window_key  # noqa: E402
 
 
 def ny_ts(hour, minute=0, day=1):
@@ -211,6 +211,73 @@ class StrategyTests(unittest.TestCase):
         self.assertIsNone(s.setup)
 
 
+def et(day, hour, minute=0):
+    """Unix time for a New York wall-clock time in October 2026 (1 Oct is a Thursday)."""
+    return dt.datetime(2026, 10, day, hour, minute, tzinfo=NY).timestamp()
+
+
+class AsiaSweepTests(unittest.TestCase):
+    def build_range(self, s, day=5, lo=30000.0, hi=30060.0):
+        # Monday 5 Oct 19:00-19:59 NY: a 60-point range
+        for m in range(60):
+            s.on_candle(Candle(et(day, 19, m), 30030, hi if m == 10 else 30040, lo if m == 20 else 30020, 30030))
+
+    def test_session_clock(self):
+        self.assertEqual(asia_session(et(5, 19, 0)), (dt.date(2026, 10, 5), 0))
+        self.assertEqual(asia_session(et(6, 2, 59)), (dt.date(2026, 10, 5), 479))
+
+    def test_short_fakeout_above_range(self):
+        s = AsiaSweep(rr=3.33, min_stop_pts=50)
+        self.build_range(s)
+        self.assertEqual((s.high, s.low), (30060, 30000))
+        s.on_candle(Candle(et(5, 20, 15), 30050, 30075, 30045, 30055))   # wick above, close back inside
+        sig = s.on_price(et(5, 20, 16, ) + 5, 30052.0)
+        self.assertEqual(sig["side"], "short")
+        self.assertEqual(sig["stop"], 30052 + 50)                           # min stop beats wick + 6
+        self.assertAlmostEqual(sig["target"], 30052 - 3.33 * 50)
+        self.assertEqual(sig["exit_by"], et(6, 3, 0))
+        self.assertIsNone(s.on_price(et(5, 20, 17), 30052.0))               # one trade per session
+
+    def test_long_fakeout_uses_wick_when_wider(self):
+        s = AsiaSweep(rr=2.0, min_stop_pts=10)
+        self.build_range(s)
+        s.on_candle(Candle(et(5, 21, 0), 30010, 30012, 29960, 30005))
+        sig = s.on_price(et(5, 21, 1), 30006.0)
+        self.assertEqual(sig["side"], "long")
+        self.assertAlmostEqual(sig["stop"], 29960 - 6)                      # wick - 10% of range
+        self.assertAlmostEqual(sig["target"], 30006 + 2 * (30006 - 29954))
+
+    def test_trend_session_stands_aside(self):
+        s = AsiaSweep()
+        self.build_range(s)
+        s.on_candle(Candle(et(5, 20, 5), 30060, 30130, 30060, 30125))       # closes a full range above
+        s.on_candle(Candle(et(5, 20, 6), 30125, 30130, 30040, 30050))
+        self.assertIsNone(s.on_price(et(5, 20, 7), 30050.0))
+
+    def test_old_sweep_not_traded_after_restart(self):
+        s = AsiaSweep()
+        self.build_range(s)
+        s.on_candle(Candle(et(5, 20, 15), 30050, 30075, 30045, 30055), live=False)
+        self.assertIsNone(s.on_price(et(5, 20, 30), 30052.0))
+        self.assertTrue(s.done)
+
+    def test_no_entries_after_window_or_on_friday(self):
+        s = AsiaSweep()
+        self.build_range(s)
+        s.on_candle(Candle(et(6, 1, 5), 30050, 30075, 30045, 30055))        # 01:05 NY: too late
+        self.assertIsNone(s.on_price(et(6, 1, 6), 30052.0))
+        f = AsiaSweep()
+        self.build_range(f, day=2)                                            # Friday 2 Oct evening
+        f.on_candle(Candle(et(2, 20, 15), 30050, 30075, 30045, 30055))
+        self.assertIsNone(f.on_price(et(2, 20, 16), 30052.0))
+
+    def test_narrow_range_skipped(self):
+        s = AsiaSweep(min_range_pct=0.001)
+        self.build_range(s, lo=30020.0, hi=30045.0)                           # 25 pts < 0.1%
+        s.on_candle(Candle(et(5, 20, 15), 30040, 30050, 30035, 30040))
+        self.assertIsNone(s.on_price(et(5, 20, 16), 30040.0))
+
+
 class FakeClient:
     def __init__(self, fail_exits=0, attach_exits=True, place_error=None, recovered=None):
         self.positions = []
@@ -288,7 +355,7 @@ class BotTests(unittest.TestCase):
         self.assertEqual(c.orders[0][3], 0.5)          # $100 / 200 pts
         kw = c.order_kwargs[0]
         self.assertEqual((kw["take_profit_price"], kw["stop_loss_price"]), (59333.0, 60200.0))
-        self.assertTrue(kw["client_order_id"].startswith("silver_bullet-"))
+        self.assertTrue(kw["client_order_id"].startswith(config.STRATEGY_ID + "-"))
         self.assertEqual(c.exit_calls, [])             # attached exits found, no separate call
         self.assertIn("trade_open", self.events())
 
@@ -355,6 +422,26 @@ class BotTests(unittest.TestCase):
         c.get_risk = lambda a: {"equity": 24_600.0}
         self.bot(c).step(now=ny_ts(12, 0))
         self.assertEqual(c.closed, ["p9"])
+
+    def test_step_closes_trade_at_session_end(self):
+        c = FakeClient()
+        c.positions = [{"id": "p9", "market_id": config.MARKET, "size": 0.1, "status": "open"}]
+        c.get_mid = lambda m, size: 60000.0
+        c.get_risk = lambda a: {"equity": 25_000.0}
+        b = self.bot(c)
+        b.open_trade = {"position_id": "p9", "equity_at_entry": 25_000.0, "exit_by": et(6, 3, 0)}
+        b.step(now=et(6, 2, 59))
+        self.assertEqual(c.closed, [])
+        b.step(now=et(6, 3, 0))
+        self.assertEqual(c.closed, ["p9"])
+
+    def test_warm_up_replays_history_without_trading(self):
+        s = AsiaSweep()
+        hist = [Candle(et(5, 19, m), 30030, 30060 if m == 10 else 30040, 30000 if m == 20 else 30020, 30030)
+                for m in range(60)] + [Candle(et(5, 20, 15), 30050, 30075, 30045, 30055)]
+        with mock.patch.object(agent, "fetch_history", return_value=hist):
+            self.assertEqual(agent.warm_up(s, config.MARKET, now=et(5, 20, 30)), 61)
+        self.assertTrue(s.done)
 
     def test_step_waits_when_marks_incomplete(self):
         c = FakeClient()
