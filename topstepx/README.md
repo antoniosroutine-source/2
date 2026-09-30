@@ -106,5 +106,6 @@ Replayed as fresh 50K Express accounts at $500 risk: 38% blown before any payout
 | `ui.py` | Desk page: alerts, Accept/Reject, "my setup" marks |
 | `backtest.py` | Backtest on API history or a CSV |
 | `check.py` | Read-only connection check |
+| `test_trade.py` | One-MNQ live execution test: linked stop/target, stop move, close (max ~$40 risk) |
 
 Tests: `python -m unittest discover -s tests` (run in this folder).
