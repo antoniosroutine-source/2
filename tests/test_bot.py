@@ -71,7 +71,7 @@ class ClientTests(unittest.TestCase):
 
 class RiskTests(unittest.TestCase):
     def make(self):
-        return RiskManager(25_000, 0.02, 0.02, 0.75, 0.0025, 2.0, 0.001)
+        return RiskManager(25_000, 0.02, 0.02, 0.75, 100, 3.0, 0.01)
 
     def test_limits_for_prime_account(self):
         r = self.make()
@@ -89,10 +89,16 @@ class RiskTests(unittest.TestCase):
 
     def test_position_size_by_risk_and_cap(self):
         r = self.make()
-        # $62.50 risk / $200 stop distance = 0.3125 -> 0.312
-        self.assertEqual(r.position_size(25_000, 60_000, 59_800), 0.312)
-        # tiny stop would be huge; capped at 2x equity notional = 50k / 60k = 0.833
-        self.assertEqual(r.position_size(25_000, 60_000, 59_999), 0.833)
+        # $100 risk / 76 pts = 1.315 -> 1.31
+        self.assertEqual(r.position_size(25_000, 30_000, 30_076), 1.31)
+        # tiny stop would be huge; capped at 3x equity notional = 75k / 30k = 2.5
+        self.assertEqual(r.position_size(25_000, 30_000, 30_001), 2.5)
+
+    def test_three_losses_then_halt(self):
+        r = self.make()
+        for lost in (0, 100, 200):
+            self.assertTrue(r.check_risk(25_000 - lost, projected_loss=100)[0])
+        self.assertFalse(r.check_risk(24_700, projected_loss=100)[0])
 
 
 class StrategyTests(unittest.TestCase):
@@ -205,7 +211,7 @@ class BotTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def bot(self, client):
-        risk = RiskManager(25_000, 0.02, 0.02, 0.75, 0.0025, 2.0, 0.001)
+        risk = RiskManager(25_000, 0.02, 0.02, 0.75, 100, 3.0, 0.01)
         return agent.Bot(client, "acc", risk, SilverBullet(), sleep=lambda s: None)
 
     def events(self):
@@ -215,12 +221,12 @@ class BotTests(unittest.TestCase):
     def test_short_trade_sets_tp_sl_after_retry(self):
         c = FakeClient(fail_exits=2)
         b = self.bot(c)
-        b.execute({"side": "short", "entry": 60000.0, "stop": 60200.0, "target": 59600.0}, 25_000)
+        b.execute({"side": "short", "entry": 60000.0, "stop": 60200.0, "target": 59333.3}, 25_000)
         self.assertEqual(c.orders[0][2], "sell")
-        self.assertEqual(c.orders[0][3], 0.312)
+        self.assertEqual(c.orders[0][3], 0.5)          # $100 / 200 pts
         self.assertEqual(len(c.exit_calls), 3)
         _, size, tp, sl = c.exit_calls[-1]
-        self.assertEqual((size, tp, sl), (0.312, 59600.0, 60200.0))
+        self.assertEqual((size, tp, sl), (0.5, 59333.3, 60200.0))  # 3.33 x 200 below the fill
         self.assertIn("trade_open", self.events())
 
     def test_unprotected_position_is_closed(self):
@@ -234,7 +240,7 @@ class BotTests(unittest.TestCase):
     def test_risk_block_places_no_order(self):
         c = FakeClient()
         b = self.bot(c)
-        b.execute({"side": "long", "entry": 60000.0, "stop": 59800.0, "target": 60400.0}, 24_650)
+        b.execute({"side": "long", "entry": 60000.0, "stop": 59800.0, "target": 60666.7}, 24_700)
         self.assertEqual(c.orders, [])
         self.assertIn("risk_block", self.events())
 

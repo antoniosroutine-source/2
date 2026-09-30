@@ -28,7 +28,7 @@ The bot builds 1-minute candles by sampling the mid price every 5 s. It only tra
 3. **Displacement + FVG:** a move against the sweep that leaves a fair value gap.
 4. **Entry:** when price retraces into the FVG.
    - The stop goes 0.02% beyond the sweep extreme (about 6 points), and never closer than 0.15% from entry (about 45 points).
-   - The take-profit is set at 2R.
+   - The take-profit is 3.33× the stop distance (risk $100 to make about $333).
 5. There is at most one trade per window. At most one position is open at a time.
 
 After a start, the bot needs about 60 minutes of candles before it can find liquidity levels.
@@ -39,8 +39,10 @@ After a start, the bot needs about 60 minutes of candles before it can find liqu
 | Max loss limit | 2% static ($500) |
 | Daily loss cap | 2% ($500). Set `MAX_DAILY_LOSS_PCT` lower for a tighter cap. |
 | Bot halts at | 75% of each limit ($375) |
-| Risk per trade | 0.25% of equity (about $62.50 if the stop is hit) |
-| Position cap | 2x equity notional, 5x isolated leverage |
+| Risk per trade | $100 if the stop is hit |
+| Target | 3.33× the stop distance (the $450 : $1,500 ratio), about +$333 |
+| Losses before halt | 3 full stop-outs |
+| Position cap | 3x equity notional ($75K), 5x isolated leverage |
 
 - Before each trade, the bot checks whether that trade's full stop-out would cross a halt level. If it would, the trade is skipped.
 - If a limit is hit while a position is open, the bot closes the position.

@@ -13,8 +13,8 @@ STARTING_BALANCE = 25_000     # Prime account
 MAX_DRAWDOWN_PCT = 0.02       # max loss limit: 2% static ($500)
 MAX_DAILY_LOSS_PCT = 0.02     # daily loss cap (same as max loss until a tighter one is chosen)
 RISK_BUFFER = 0.75            # bot halts at 75% of each limit ($375), before the firm would
-RISK_PER_TRADE_PCT = 0.0025   # loss if the stop is hit: 0.25% of equity (~$62.50)
-MAX_NOTIONAL_MULT = 2.0       # position notional never exceeds 2x equity
+RISK_PER_TRADE_USD = 100      # loss if the stop is hit (3 full losses reach the $375 halt)
+MAX_NOTIONAL_MULT = 3.0       # position notional never exceeds 3x equity ($75K)
 
 # --- Strategy ------------------------------------------------------------------
 STRATEGY_ID = "silver_bullet"
@@ -22,7 +22,7 @@ MARKET = os.environ.get("FPERP_MARKET", "NAS100")  # Nasdaq-100 perp; a plain sy
                                                    # in MFP's market list at startup ("venue|SYMBOL" is used as-is)
 SIDE_LEVERAGE = 5
 MARGIN_MODE = "isolated"
-RR = 2.0                      # take profit at 2x the stop distance
+RR = 1500 / 450               # take profit at 3.33x the stop distance ($100 risk -> ~$333 target)
 LIQUIDITY_LOOKBACK = 60       # candles used to find buy/sell-side liquidity
 STOP_BUFFER_PCT = 0.0002      # stop sits this far beyond the sweep extreme (~6 pts at 30,000)
 MIN_STOP_PCT = 0.0015         # stop never closer than 0.15% from entry (~45 pts at 30,000)

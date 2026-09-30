@@ -7,11 +7,11 @@ import os
 
 class RiskManager:
     def __init__(self, starting_balance, max_daily_loss_pct, max_drawdown_pct, buffer,
-                 risk_per_trade_pct, max_notional_mult, size_step, state_file=None):
+                 risk_per_trade_usd, max_notional_mult, size_step, state_file=None):
         self.starting_balance = starting_balance
         self.daily_limit = starting_balance * max_daily_loss_pct * buffer
         self.drawdown_limit = starting_balance * max_drawdown_pct * buffer
-        self.risk_per_trade_pct = risk_per_trade_pct
+        self.risk_per_trade_usd = risk_per_trade_usd
         self.max_notional_mult = max_notional_mult
         self.size_step = size_step
         self.state_file = state_file
@@ -60,11 +60,11 @@ class RiskManager:
         return True, "ok"
 
     def position_size(self, equity, entry, stop):
-        """Size that loses risk_per_trade_pct of equity at the stop, capped by notional, rounded down."""
+        """Size that loses risk_per_trade_usd at the stop, capped by notional, rounded down."""
         distance = abs(entry - stop)
         if entry <= 0 or distance <= 0:
             return 0.0
-        raw = min(equity * self.risk_per_trade_pct / distance,
+        raw = min(self.risk_per_trade_usd / distance,
                   equity * self.max_notional_mult / entry)
         steps = math.floor(raw / self.size_step + 1e-9)
         return round(steps * self.size_step, 10)

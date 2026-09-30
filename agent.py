@@ -221,7 +221,7 @@ def main():
     config.SIZE_STEP = float(pick(info, "size_increment", "step_size", "lot_size", default=config.SIZE_STEP))
     config.PRICE_TICK = float(pick(info, "tick_size", "price_increment", default=config.PRICE_TICK))
     risk = RiskManager(config.STARTING_BALANCE, config.MAX_DAILY_LOSS_PCT, config.MAX_DRAWDOWN_PCT,
-                       config.RISK_BUFFER, config.RISK_PER_TRADE_PCT, config.MAX_NOTIONAL_MULT,
+                       config.RISK_BUFFER, config.RISK_PER_TRADE_USD, config.MAX_NOTIONAL_MULT,
                        config.SIZE_STEP, config.RISK_STATE_FILE)
     strategy = SilverBullet(config.LIQUIDITY_LOOKBACK, config.RR, config.STOP_BUFFER_PCT,
                             config.MIN_STOP_PCT, config.SETUP_EXPIRY_BARS)
