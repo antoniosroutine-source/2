@@ -4,10 +4,13 @@ import json
 import math
 import os
 
+from strategy import NY
+
 
 class RiskManager:
     def __init__(self, starting_balance, max_daily_loss_pct, max_drawdown_pct, buffer,
-                 risk_per_trade_usd, max_notional_mult, size_step, state_file=None):
+                 risk_per_trade_usd, max_notional_mult, size_step, state_file=None,
+                 server_room_reserve_usd=0.0):
         self.starting_balance = starting_balance
         self.daily_limit = starting_balance * max_daily_loss_pct * buffer
         self.drawdown_limit = starting_balance * max_drawdown_pct * buffer
@@ -15,6 +18,7 @@ class RiskManager:
         self.max_notional_mult = max_notional_mult
         self.size_step = size_step
         self.state_file = state_file
+        self.server_room_reserve_usd = server_room_reserve_usd
         self.state = self._load()
 
     def _load(self):
@@ -32,8 +36,8 @@ class RiskManager:
                 json.dump(self.state, f)
 
     def _roll_day(self, equity, now):
-        # Days roll over at 00:00 UTC. Confirm the reset time MFP uses and adjust if it differs.
-        today = (now or dt.datetime.now(dt.timezone.utc)).strftime("%Y-%m-%d")
+        # MFP resets the daily loss at midnight New York time (04:00 or 05:00 UTC, with DST).
+        today = (now or dt.datetime.now(dt.timezone.utc)).astimezone(NY).strftime("%Y-%m-%d")
         if self.state["day"] != today:
             self.state = {"day": today, "day_start_equity": equity}
             self._save()
@@ -50,9 +54,19 @@ class RiskManager:
             "drawdown_limit": self.drawdown_limit,
         }
 
-    def check_risk(self, equity, projected_loss=0.0, now=None):
-        """Returns (ok, reason). projected_loss = what the next trade loses if its stop is hit."""
+    def check_risk(self, equity, projected_loss=0.0, now=None, server=None):
+        """Returns (ok, reason). projected_loss = what the next trade loses if its stop is hit.
+
+        server is MFP's risk snapshot. Its daily_loss_room / max_drawdown_room (equity minus each
+        firm floor) are authoritative, so they also cover losses this bot never saw (manual trades,
+        restarts mid-day). The bot keeps server_room_reserve_usd of room above each floor.
+        """
         s = self.snapshot(equity, now)
+        for key in ("daily_loss_room", "max_drawdown_room"):
+            room = (server or {}).get(key)
+            if room is not None and float(room) - projected_loss <= self.server_room_reserve_usd:
+                return False, (f"MFP {key} {float(room):.2f} - {projected_loss:.2f} would leave less than "
+                               f"{self.server_room_reserve_usd:.2f}")
         if s["drawdown"] + projected_loss >= self.drawdown_limit:
             return False, f"drawdown {s['drawdown']:.2f} + {projected_loss:.2f} would reach limit {self.drawdown_limit:.2f}"
         if s["daily_loss"] + projected_loss >= self.daily_limit:

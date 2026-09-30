@@ -45,7 +45,8 @@ class ClientTests(unittest.TestCase):
         err = urllib.error.HTTPError("u", 503, "busy", {}, io.BytesIO(b"busy"))
         ok = FakeResp(json.dumps({"data": {"id": "o1"}}).encode())
         with mock.patch("urllib.request.urlopen", side_effect=[err, ok]) as m, mock.patch("time.sleep"):
-            out = c.place_market_order("a", "binance|BTCUSDT", "buy", 0.01, 60000, 5, "isolated")
+            out = c.place_market_order("a", "binance|BTCUSDT", "buy", 0.01, 60000, 5, "isolated",
+                                       client_order_id="sb-1", take_profit_price=61000, stop_loss_price=59500)
         self.assertEqual(out, {"id": "o1"})
         keys = {call[0][0].get_header("Idempotency-key") for call in m.call_args_list}
         self.assertEqual(len(keys), 1)
@@ -53,6 +54,39 @@ class ClientTests(unittest.TestCase):
         sent = json.loads(m.call_args[0][0].data)
         self.assertIsInstance(sent["size"], float)
         self.assertIsInstance(sent["expected_price"], float)
+        self.assertEqual((sent["client_order_id"], sent["take_profit_price"], sent["stop_loss_price"]),
+                         ("sb-1", 61000.0, 59500.0))
+
+    def test_null_equity_when_marks_incomplete(self):
+        c = MFPClient("fp_test_x", "https://x/v1")
+        body = json.dumps({"data": {"risk": {"equity": None, "marks_complete": False}}}).encode()
+        with mock.patch("urllib.request.urlopen", return_value=FakeResp(body)):
+            self.assertIsNone(c.get_equity("a"))
+
+    def test_retry_after_is_honoured(self):
+        c = MFPClient("fp_test_x", "https://x/v1")
+        err = urllib.error.HTTPError("u", 429, "slow", {"Retry-After": "4"}, io.BytesIO(b"{}"))
+        with mock.patch("urllib.request.urlopen", side_effect=[err, FakeResp(b'{"data":[]}')]), \
+                mock.patch("time.sleep") as sleep:
+            c.list_accounts()
+        sleep.assert_called_once_with(4.0)
+
+    def test_find_order_by_client_id(self):
+        c = MFPClient("fp_test_x", "https://x/v1")
+        body = json.dumps({"data": [{"id": "o7"}], "has_more": False}).encode()
+        with mock.patch("urllib.request.urlopen", return_value=FakeResp(body)) as m:
+            self.assertEqual(c.find_order_by_client_id("sb-1"), {"id": "o7"})
+        self.assertIn("/orders?client_order_id=sb-1", m.call_args[0][0].full_url)
+        with mock.patch("urllib.request.urlopen", return_value=FakeResp(b'{"data":[],"has_more":false}')):
+            self.assertIsNone(c.find_order_by_client_id("sb-2"))
+
+    def test_exit_orders_are_oco_market_exits(self):
+        c = MFPClient("fp_test_x", "https://x/v1")
+        with mock.patch("urllib.request.urlopen", return_value=FakeResp(b'{"data":{}}')) as m:
+            c.set_exit_orders("p1", 0.5, 110, 90)
+        ops = json.loads(m.call_args[0][0].data)["operations"]
+        self.assertEqual([(o["group"], o["execution_type"], o["oco_pair_with_operation_index"]) for o in ops],
+                         [("tp", "market", 1), ("sl", "market", 0)])
 
     def test_quote_encodes_pipe_market(self):
         c = MFPClient("fp_test_x", "https://x/v1")
@@ -80,12 +114,23 @@ class RiskTests(unittest.TestCase):
         self.assertFalse(r.check_risk(24_620)[0])          # $380 down
         self.assertFalse(r.check_risk(24_700, projected_loss=80)[0])  # 300 + 80 >= 375
 
-    def test_daily_roll(self):
+    def test_daily_roll_at_new_york_midnight(self):
         r = self.make()
         d1 = dt.datetime(2026, 10, 1, 12, tzinfo=dt.timezone.utc)
         r.check_risk(25_000, now=d1)
         self.assertEqual(r.snapshot(24_900, now=d1)["daily_loss"], 100)
-        self.assertEqual(r.snapshot(24_900, now=d1 + dt.timedelta(days=1))["daily_loss"], 0)
+        # 01:00 UTC on 2 Oct is still 1 Oct in New York (EDT), so the day has not reset
+        self.assertEqual(r.snapshot(24_900, now=dt.datetime(2026, 10, 2, 1, tzinfo=dt.timezone.utc))["daily_loss"], 100)
+        # 04:00 UTC is midnight in New York: new day
+        self.assertEqual(r.snapshot(24_900, now=dt.datetime(2026, 10, 2, 4, tzinfo=dt.timezone.utc))["daily_loss"], 0)
+
+    def test_server_room_blocks_trade(self):
+        r = RiskManager(25_000, 0.02, 0.02, 0.75, 100, 3.0, 0.01, server_room_reserve_usd=150)
+        self.assertTrue(r.check_risk(25_000, 100, server={"daily_loss_room": 750, "max_drawdown_room": 1250})[0])
+        # e.g. manual losses the bot never saw: MFP says only $240 left above the daily floor
+        ok, reason = r.check_risk(25_000, 100, server={"daily_loss_room": 240, "max_drawdown_room": 1250})
+        self.assertFalse(ok)
+        self.assertIn("daily_loss_room", reason)
 
     def test_position_size_by_risk_and_cap(self):
         r = self.make()
@@ -167,21 +212,38 @@ class StrategyTests(unittest.TestCase):
 
 
 class FakeClient:
-    def __init__(self, fail_exits=0):
+    def __init__(self, fail_exits=0, attach_exits=True, place_error=None, recovered=None):
         self.positions = []
         self.fail_exits = fail_exits
+        self.attach_exits = attach_exits
+        self.place_error = place_error
+        self.recovered = recovered
         self.exit_calls = []
         self.closed = []
         self.orders = []
+        self.order_kwargs = []
+        self.working = []
 
-    def place_market_order(self, *args):
+    def place_market_order(self, *args, **kwargs):
         self.orders.append(args)
+        self.order_kwargs.append(kwargs)
+        if self.place_error:
+            raise self.place_error
         return {"id": "o1", "status": "pending"}
+
+    def find_order_by_client_id(self, client_order_id):
+        return self.recovered
+
+    def list_working_orders(self, account_id):
+        return self.working
 
     def wait_for_order(self, order_id):
         side = self.orders[-1][2]
         self.positions = [{"id": "p1", "market_id": config.MARKET, "size": self.orders[-1][3],
                            "side": side, "entry_price": 60000.0, "status": "open"}]
+        if self.attach_exits:
+            self.working = [{"id": g, "market_id": config.MARKET, "reduce_only": True,
+                             "target_position_id": "p1"} for g in ("tp", "sl")]
         return {"id": order_id, "status": "filled"}
 
     def list_positions(self, account_id):
@@ -218,19 +280,49 @@ class BotTests(unittest.TestCase):
         with open(config.LOG_FILE) as f:
             return [json.loads(line)["event"] for line in f]
 
-    def test_short_trade_sets_tp_sl_after_retry(self):
-        c = FakeClient(fail_exits=2)
+    def test_short_trade_attaches_tp_sl_to_entry(self):
+        c = FakeClient()
         b = self.bot(c)
         b.execute({"side": "short", "entry": 60000.0, "stop": 60200.0, "target": 59333.3}, 25_000)
         self.assertEqual(c.orders[0][2], "sell")
         self.assertEqual(c.orders[0][3], 0.5)          # $100 / 200 pts
-        self.assertEqual(len(c.exit_calls), 3)
-        _, size, tp, sl = c.exit_calls[-1]
-        self.assertEqual((size, tp, sl), (0.5, 59333.3, 60200.0))  # 3.33 x 200 below the fill
+        kw = c.order_kwargs[0]
+        self.assertEqual((kw["take_profit_price"], kw["stop_loss_price"]), (59333.0, 60200.0))
+        self.assertTrue(kw["client_order_id"].startswith("silver_bullet-"))
+        self.assertEqual(c.exit_calls, [])             # attached exits found, no separate call
         self.assertIn("trade_open", self.events())
 
+    def test_missing_attached_exits_are_placed_after_retry(self):
+        c = FakeClient(fail_exits=2, attach_exits=False)
+        b = self.bot(c)
+        b.execute({"side": "short", "entry": 60000.0, "stop": 60200.0, "target": 59333.3}, 25_000)
+        self.assertEqual(len(c.exit_calls), 3)
+        self.assertEqual(c.exit_calls[-1][1:], (0.5, 59333.0, 60200.0))
+        self.assertIn("trade_open", self.events())
+
+    def test_rejected_order_is_not_recovered(self):
+        c = FakeClient(place_error=MFPError(422, "exposure_cap"), recovered={"id": "o1"})
+        b = self.bot(c)
+        b.execute({"side": "long", "entry": 60000.0, "stop": 59800.0, "target": 60666.7}, 25_000)
+        self.assertIn("order_rejected", self.events())
+        self.assertIsNone(b.open_trade)
+
+    def test_lost_response_recovers_order_by_client_id(self):
+        c = FakeClient(place_error=OSError("connection reset"), recovered={"id": "o1", "status": "pending"})
+        b = self.bot(c)
+        b.execute({"side": "long", "entry": 60000.0, "stop": 59800.0, "target": 60666.7}, 25_000)
+        self.assertEqual(len(c.orders), 1)             # not placed twice
+        self.assertIn("trade_open", self.events())
+
+    def test_lost_response_with_no_order_places_nothing(self):
+        c = FakeClient(place_error=OSError("connection reset"), recovered=None)
+        b = self.bot(c)
+        b.execute({"side": "long", "entry": 60000.0, "stop": 59800.0, "target": 60666.7}, 25_000)
+        self.assertIn("order_not_placed", self.events())
+        self.assertIsNone(b.open_trade)
+
     def test_unprotected_position_is_closed(self):
-        c = FakeClient(fail_exits=99)
+        c = FakeClient(fail_exits=99, attach_exits=False)
         b = self.bot(c)
         b.execute({"side": "long", "entry": 60000.0, "stop": 59800.0, "target": 60400.0}, 25_000)
         self.assertEqual(len(c.exit_calls), 5)
@@ -247,7 +339,7 @@ class BotTests(unittest.TestCase):
     def test_step_logs_trade_closed_when_position_gone(self):
         c = FakeClient()
         c.get_mid = lambda m, size: 60000.0
-        c.get_equity = lambda a: 25_050.0
+        c.get_risk = lambda a: {"equity": 25_050.0}
         b = self.bot(c)
         b.open_trade = {"position_id": "p1", "equity_at_entry": 25_000.0, "side": "long"}
         b.step(now=ny_ts(12, 0))
@@ -260,18 +352,35 @@ class BotTests(unittest.TestCase):
         c = FakeClient()
         c.positions = [{"id": "p9", "market_id": config.MARKET, "size": 0.1, "status": "open"}]
         c.get_mid = lambda m, size: 60000.0
-        c.get_equity = lambda a: 24_600.0
+        c.get_risk = lambda a: {"equity": 24_600.0}
         self.bot(c).step(now=ny_ts(12, 0))
         self.assertEqual(c.closed, ["p9"])
 
+    def test_step_waits_when_marks_incomplete(self):
+        c = FakeClient()
+        c.positions = [{"id": "p9", "market_id": config.MARKET, "size": 0.1, "status": "open"}]
+        c.get_mid = lambda m, size: 60000.0
+        c.get_risk = lambda a: {"equity": None, "marks_complete": False, "missing_markets": [config.MARKET]}
+        self.bot(c).step(now=ny_ts(12, 0))             # no crash, no close
+        self.assertEqual(c.closed, [])
+        self.assertIn("marks_incomplete", self.events())
+
     def test_resolve_market(self):
         c = FakeClient()
-        c.list_markets = lambda: [{"id": "binance|BTCUSDT", "symbol": "BTCUSDT"},
-                                  {"id": "xyz|NAS100", "symbol": "NAS100", "tick_size": 0.5}]
-        self.assertEqual(agent.resolve_market(c, "NAS100")[0], "xyz|NAS100")
-        self.assertEqual(agent.resolve_market(c, "nas100")[1]["tick_size"], 0.5)
+        # shape of MFP's real GET /v1/markets entries
+        c.list_markets = lambda: [
+            {"market_id": "binance|BTCUSDT", "symbol": "BTC", "coin": "BTCUSDT", "size_decimals": 3, "max_leverage": 2},
+            {"market_id": "hyperliquid|xyz:XYZ100", "symbol": "XYZ100", "coin": "xyz:XYZ100",
+             "size_decimals": 4, "max_leverage": 12},
+            {"market_id": "hyperliquid|xyz:SP500", "symbol": "SP500", "coin": "xyz:SP500",
+             "size_decimals": 3, "max_leverage": 12}]
+        self.assertEqual(agent.resolve_market(c, "hyperliquid|xyz:XYZ100")[0], "hyperliquid|xyz:XYZ100")
+        self.assertEqual(agent.resolve_market(c, "XYZ100")[0], "hyperliquid|xyz:XYZ100")
+        market, info = agent.resolve_market(c, "NAS100")   # alias
+        self.assertEqual(market, "hyperliquid|xyz:XYZ100")
+        self.assertEqual(agent.size_step(info), 0.0001)
         with self.assertRaises(SystemExit):
-            agent.resolve_market(c, "SPX500")
+            agent.resolve_market(c, "DAX40")
 
     def test_resolve_market_falls_back_to_exact_id(self):
         c = FakeClient()

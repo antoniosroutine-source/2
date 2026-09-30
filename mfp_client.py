@@ -4,7 +4,8 @@ API quirks handled here:
 - every response is wrapped in {"data": ...} -> _unwrap()
 - every POST/PUT carries an Idempotency-Key (reused across retries of the same call)
 - numeric order fields are sent as numbers, not strings
-- account equity lives at account["risk"]["equity"]
+- account equity lives at account["risk"]["equity"]; it is null when a position lacks a fresh mark
+- 429/503 responses carry Retry-After, which is honoured before retrying
 - market ids use pipe format ("binance|BTCUSDT") and are URL-encoded in paths
 """
 import json
@@ -15,6 +16,7 @@ import urllib.request
 import uuid
 
 RETRY_STATUSES = {429, 500, 502, 503, 504}
+TERMINAL_ORDER_STATUSES = ("filled", "rejected", "expired", "canceled", "cancelled")
 
 
 class MFPError(Exception):
@@ -36,6 +38,13 @@ def pick(d, *keys, default=None):
         if isinstance(d, dict) and d.get(k) is not None:
             return d[k]
     return default
+
+
+def _retry_after(err):
+    try:
+        return min(30.0, float(err.headers.get("Retry-After")))
+    except (TypeError, ValueError, AttributeError):
+        return None
 
 
 class MFPClient:
@@ -70,7 +79,7 @@ class MFPClient:
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode(errors="replace")
                 if e.code in RETRY_STATUSES and attempt < self.retries - 1:
-                    time.sleep(0.5 * 2 ** attempt)
+                    time.sleep(_retry_after(e) or 0.5 * 2 ** attempt)
                     continue
                 raise MFPError(e.code, err_body) from None
             except urllib.error.URLError:
@@ -90,8 +99,17 @@ class MFPClient:
     def get_account(self, account_id):
         return self._request("GET", f"/accounts/{self._seg(account_id)}")
 
+    def get_risk(self, account_id):
+        """Fresh risk snapshot: equity, daily_loss_room, max_drawdown_room, marks_complete, ..."""
+        return self.get_account(account_id)["risk"]
+
     def get_equity(self, account_id):
-        return float(self.get_account(account_id)["risk"]["equity"])
+        """Account equity, or None when an open position has no fresh mark."""
+        equity = self.get_risk(account_id).get("equity")
+        return None if equity is None else float(equity)
+
+    def get_trading_policy(self, account_id):
+        return self._request("GET", f"/accounts/{self._seg(account_id)}/trading-policy")
 
     # -- market data ----------------------------------------------------------
     def list_markets(self):
@@ -107,7 +125,9 @@ class MFPClient:
 
     # -- orders ---------------------------------------------------------------
     def place_market_order(self, account_id, market_id, side, size, expected_price,
-                           leverage, margin_mode):
+                           leverage, margin_mode, client_order_id=None,
+                           take_profit_price=None, stop_loss_price=None):
+        """Market order. TP/SL attached here are created with the fill, so the position is never naked."""
         body = {
             "account_id": account_id,
             "market_id": market_id,
@@ -118,7 +138,23 @@ class MFPClient:
             "leverage": leverage,
             "margin_mode": margin_mode,
         }
+        if client_order_id:
+            body["client_order_id"] = client_order_id
+        if take_profit_price is not None:
+            body["take_profit_price"] = float(take_profit_price)
+        if stop_loss_price is not None:
+            body["stop_loss_price"] = float(stop_loss_price)
         return self._request("POST", "/orders", body=body)
+
+    def find_order_by_client_id(self, client_order_id):
+        """Recovers an order whose placement response was lost. Returns None if it was never created."""
+        result = self._request("GET", "/orders", params={"client_order_id": client_order_id})
+        orders = result if isinstance(result, list) else pick(result, "data", default=[])
+        return orders[0] if orders else None
+
+    def list_working_orders(self, account_id):
+        result = self._request("GET", "/orders", params={"account_id": account_id, "status": "working"})
+        return result if isinstance(result, list) else pick(result, "data", default=[])
 
     def get_order(self, order_id):
         return self._request("GET", f"/orders/{self._seg(order_id)}")
@@ -127,7 +163,7 @@ class MFPClient:
         """Poll until the order is filled/rejected/cancelled; returns the last order seen."""
         deadline = time.monotonic() + timeout
         order = self.get_order(order_id)
-        while str(order.get("status", "")).lower() not in ("filled", "rejected", "cancelled", "canceled"):
+        while str(order.get("status", "")).lower() not in TERMINAL_ORDER_STATUSES:
             if time.monotonic() >= deadline:
                 break
             time.sleep(interval)
@@ -144,8 +180,11 @@ class MFPClient:
             "expected_position_size": float(size),
             "expected_orders": [],
             "operations": [
-                {"kind": "place", "group": "tp", "size": float(size), "price": float(tp_price)},
-                {"kind": "place", "group": "sl", "size": float(size), "price": float(sl_price)},
+                # market exits, paired as OCO so one filling cancels the other
+                {"kind": "place", "group": "tp", "execution_type": "market", "size": float(size),
+                 "price": float(tp_price), "oco_pair_with_operation_index": 1},
+                {"kind": "place", "group": "sl", "execution_type": "market", "size": float(size),
+                 "price": float(sl_price), "oco_pair_with_operation_index": 0},
             ],
         }
         return self._request("PUT", f"/positions/{self._seg(position_id)}/exit-orders", body=body)
