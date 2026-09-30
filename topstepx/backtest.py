@@ -21,7 +21,8 @@ from manage import DayGuard, next_stop
 from strategy import Bar, LevelSweep
 
 
-def simulate(bars, p, tick, pv, slippage_ticks=1):
+def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
+    """accept(signal) -> bool lets a study filter signals (e.g. by bias) without changing the strategy."""
     strat = LevelSweep(p, tick, pv)
     agg = Aggression(p.AGG_WINDOW_MIN)
     guard = DayGuard(p)
@@ -59,7 +60,7 @@ def simulate(bars, p, tick, pv, slippage_ticks=1):
             skips.append(sig["skip"])
             continue
         ok, why = guard.can_enter(b.t + 60)
-        if not ok:
+        if not ok or (accept and not accept(sig)):
             continue
         d = 1 if sig["side"] == "long" else -1
         entry = sig["entry"] + d * slip
