@@ -171,6 +171,8 @@ class LevelTests(unittest.TestCase):
         a.add_trade(1001, 10, False)
         self.assertAlmostEqual(a.ratio(1002), 0.5)
         self.assertEqual(a.ratio(1000 + 16 * 60), 0.0)     # rolled out of the window
+        self.assertFalse(a.covered(1002))                  # seconds of tape: not a full reading
+        self.assertTrue(a.covered(1000 + 15 * 60))
         a.add_bar(Bar(5000, 100, 101, 95, 96, v=50))       # closed near the low: mostly selling
         self.assertLess(a.ratio(5060), -0.5)
 

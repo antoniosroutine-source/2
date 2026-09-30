@@ -238,7 +238,9 @@ class Bot:
         return self.c.token
 
     def aggression(self, now):
-        if self.stream.healthy():
+        # the tape is only trusted once it covers a full window; right after connecting it holds
+        # a few seconds of trades, so the bar estimate is used until then
+        if self.stream.healthy() and self.tape_agg.covered(time.time()):
             return self.tape_agg.ratio(now), "tape"
         return self.bar_agg.ratio(now), "bars"
 

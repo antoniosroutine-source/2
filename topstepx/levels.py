@@ -126,9 +126,16 @@ class Aggression:
         self.window = window_min * 60
         self.events = deque()   # (ts, signed volume, volume)
         self.lock = threading.Lock()   # the live tape arrives on another thread
+        self.since = None       # time of the first event: the reading is only complete after a full window
+
+    def covered(self, now):
+        """True once the meter has seen a full window of data (not just a few seconds after connecting)."""
+        return self.since is not None and now - self.since >= self.window
 
     def add_trade(self, ts, volume, is_buy):
         with self.lock:
+            if self.since is None:
+                self.since = ts
             self.events.append((ts, volume if is_buy else -volume, volume))
             self._trim(ts)
 
