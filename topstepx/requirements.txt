@@ -1,0 +1,4 @@
+# Live tape and order book from ProjectX's market hub (the bot runs without it, on bar-based aggression)
+websocket-client
+# Windows has no built-in timezone database, which the New York session times need
+tzdata; sys_platform == "win32"

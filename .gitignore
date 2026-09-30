@@ -4,3 +4,7 @@ __pycache__/
 bot_log.jsonl
 risk_state.json
 bot_state.json.tmp
+topstepx/px_log.jsonl
+topstepx/px_state.json
+topstepx/backtest_trades.json
+topstepx/STOP
