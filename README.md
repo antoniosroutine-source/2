@@ -27,7 +27,7 @@ All times are New York time. Sessions start Sunday to Thursday evenings.
 1. **Range:** the high and low from 19:00 to 20:00.
 2. **Sweep (fakeout):** from 20:00 to 01:00, a 1-minute candle trades beyond the range and closes back inside.
 3. **Entry:** fade the move back into the range. Short after a sweep of the high, long after a sweep of the low.
-   - The stop goes beyond the sweep wick by 10% of the range width, and at least 50 points from entry.
+   - The stop goes beyond the sweep wick by 10% of the range width, and at least 30 points from entry.
    - The take-profit is 3.33× the stop distance.
 4. **Exit:** the TP or SL, or a close at 03:00 (London open) if neither is hit.
 5. **Filters:** at most one trade per session. The session is skipped if the range is under 0.1% of price, or if price closes a full range width outside it (a trend session).
@@ -35,7 +35,7 @@ All times are New York time. Sessions start Sunday to Thursday evenings.
 At startup the bot loads the last 12 hours of 1-minute candles from Hyperliquid's public API, so it knows tonight's range straight away. A sweep that happened before the bot started is never traded late.
 
 ### Backtest (rough)
-This was a small test on 56 Asia sessions of Dukascopy Nasdaq-100 1-minute data, with MFP fees plus 1.5 points of spread per side. It used a 60-minute range and a stop of at least 50 points. Across target settings it was slightly profitable (profit factor 1.14–1.25 over 39 trades), with drawdowns of 6–9R along the way. Without the 50-point minimum stop, costs made every version lose. **39 trades is far too few to prove an edge.** Treat live results as the real test.
+This was a small test on 56 Asia sessions of Dukascopy Nasdaq-100 1-minute data, with MFP fees plus 1.5 points of spread per side. It used a 60-minute range. With a stop of at least 30 points and a 3.33R target it was the best setting tested: 36% wins, +0.25R per trade, profit factor 1.35 over 39 trades, and a 7.8R drawdown along the way. With a 50-point minimum it was a little weaker (profit factor 1.25). With no minimum (stops of about 20 points) it lost, because costs took about 30% of each trade's risk. **39 trades is far too few to prove an edge.** Treat live results as the real test.
 
 ## Risk (`risk.py`, `config.py`)
 MFP's 1-Step Select rules: **3% daily loss ($300)**, **3% static max drawdown (floor $9,700)** and a **9% profit target ($900)**, all on the starting balance and measured on equity including open P&L. The daily loss resets at **midnight New York time**.
@@ -49,7 +49,7 @@ MFP's 1-Step Select rules: **3% daily loss ($300)**, **3% static max drawdown (f
 | Risk per trade | Up to $100 if the stop is hit |
 | Target | 3.33× the stop distance |
 | Losses before halt | 2 full stop-outs (a third would pass $225) |
-| Position cap | 3x equity notional ($30K), 5x isolated leverage (XYZ100 allows up to 12x). With the 50–100 point stops this strategy uses, this cap keeps the risk at about $50–100 per trade. |
+| Position cap | 8x equity notional ($80K), 12x isolated leverage (about $6.7K margin). That is about $78 of risk on a 30-point stop, and the full $100 on stops from about 38 points. MFP may reject an order above its per-market exposure cap; the bot logs it and skips the trade. |
 
 - Before each trade, the bot checks whether that trade's full stop-out would cross a halt level. If it would, the trade is skipped.
 - If a limit is hit while a position is open, the bot closes the position.

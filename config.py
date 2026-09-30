@@ -20,7 +20,8 @@ MAX_DAILY_LOSS_PCT = 0.03     # firm daily loss: 3% ($300)
 RISK_BUFFER = 0.75            # bot halts at 75% of each limit ($225), before the firm would
 SERVER_ROOM_RESERVE_USD = 50  # also halt if MFP reports less than this left above either firm floor
 RISK_PER_TRADE_USD = 100      # loss if the stop is hit: 2 full losses, then the $225 halt blocks a third
-MAX_NOTIONAL_MULT = 3.0       # position notional never exceeds 3x equity ($30K); caps risk on tight stops
+MAX_NOTIONAL_MULT = 8.0       # position notional never exceeds 8x equity ($80K): ~$78 risk on a 30-pt stop,
+                              # the full $100 from ~38 pts; about $6.7K of margin at 12x
 
 # --- Strategy ------------------------------------------------------------------
 # "asia_sweep" (Asia range liquidity sweep / fakeout) or "silver_bullet" (ICT Silver Bullet, NY hours)
@@ -28,7 +29,7 @@ STRATEGY_ID = os.environ.get("FPERP_STRATEGY", "asia_sweep")
 # MFP's Nasdaq-100 perpetual is XYZ100 on Hyperliquid. A plain symbol is looked up in MFP's market
 # list at startup; NAS100/NDX/US100/NQ are accepted as aliases for it.
 MARKET = os.environ.get("FPERP_MARKET", "hyperliquid|xyz:XYZ100")
-SIDE_LEVERAGE = 5             # XYZ100 allows up to 12x
+SIDE_LEVERAGE = 12            # XYZ100's maximum; keeps margin for an $80K position near $6.7K
 MARGIN_MODE = "isolated"
 RR = 1500 / 450               # take profit at 3.33x the stop distance ($100 risk -> ~$333 target)
 # Asia sweep: range 19:00-20:00 NY, trade sweeps 20:00-01:00, flat by 03:00
@@ -36,7 +37,7 @@ ASIA_RANGE_MIN = 60           # minutes after 19:00 NY that form the Asia range
 ASIA_TRADE_UNTIL_MIN = 360    # no new entries after 01:00 NY
 ASIA_EXIT_MIN = 480           # any open trade is closed at 03:00 NY (London open)
 ASIA_BUF_FRAC = 0.1           # stop sits 10% of the range width beyond the sweep wick
-ASIA_MIN_STOP_PTS = 50.0      # ...and at least 50 points from entry (keeps costs a small share of risk)
+ASIA_MIN_STOP_PTS = 30.0      # ...and at least 30 points from entry (best backtest result; costs ~20% of risk)
 ASIA_MIN_RANGE_PCT = 0.001    # skip sessions whose range is under 0.1% of price
 # Silver Bullet
 LIQUIDITY_LOOKBACK = 60       # candles used to find buy/sell-side liquidity

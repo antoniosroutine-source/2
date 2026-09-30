@@ -57,9 +57,10 @@ def main():
     print(f"  bid {quote.get('bid')}  ask {quote.get('ask')}  mid {mid}")
 
     equity = float(risk.get("equity") or account.get("balance") or config.STARTING_BALANCE)
-    stop_dist = mid * config.MIN_STOP_PCT * 2
+    stop_dist = config.ASIA_MIN_STOP_PTS if config.STRATEGY_ID == "asia_sweep" else mid * config.MIN_STOP_PCT * 2
     size = min(config.RISK_PER_TRADE_USD / stop_dist, equity * config.MAX_NOTIONAL_MULT / mid)
     size = int(size / step) * step
+    print(f"  margin at {config.SIDE_LEVERAGE}x: ${size * mid / config.SIDE_LEVERAGE:,.0f}")
     print(f"\nExample trade with a {stop_dist:.0f}-point stop: size {size:.4f}, notional ${size * mid:,.0f},"
           f" loss at stop ${size * stop_dist:,.2f}, target ${size * stop_dist * config.RR:,.2f}")
     print("\nAll checks passed. No orders were placed.")
