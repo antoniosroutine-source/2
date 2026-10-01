@@ -30,7 +30,7 @@ TRAIL_KEEP = 0.65                 # trail keeps 65% of the best open profit
 TARGET_CAP_USD = 1500.0           # take profit never more than this (Topstep consistency rule)
 MIN_TARGET_USD = 800.0            # skip trades whose target pays less (BE and trail must be reachable)
 DAILY_MAX_LOSSES = 1              # stop for the day after one losing trade
-DAILY_MAX_TRADES = 1              # at most one trade per trading day, win or lose
+DAILY_MAX_TRADES = None           # no cap (the Asia sweep takes one trade per session by design); e.g. 1 = one per day
 LOSS_THRESHOLD_USD = -50.0        # a trade that loses less than this (a scratch) is not a loss
 DAILY_PROFIT_STOP_USD = 1500.0    # stop for the day once the day's P&L reaches this
 

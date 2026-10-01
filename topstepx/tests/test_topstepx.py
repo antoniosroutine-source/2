@@ -502,8 +502,9 @@ class PersistenceTests(unittest.TestCase):
             self.assertFalse(g2.can_enter(ny(5, 21))[0])
             self.assertTrue(g2.can_enter(ny(6, 20))[0])    # a new trading day
 
-    def test_one_trade_per_day(self):
-        g = DayGuard(params())
+    def test_optional_one_trade_per_day(self):
+        self.assertIsNone(config.DAILY_MAX_TRADES)          # off by default
+        g = DayGuard(params(DAILY_MAX_TRADES=1))
         g.record(ny(5, 20), 900.0)                         # a win
         ok, why = g.can_enter(ny(5, 21))
         self.assertFalse(ok)

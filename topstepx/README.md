@@ -76,7 +76,8 @@ Pick with `set PX_STRATEGY=...` before `python bot.py`:
   Uses the same **breakeven at +$650 and 65% trail from +$785** (`ASIA_TRAIL`). Two-year backtest with these
   settings: 308 trades, 37% wins, +$4,324, worst losing streak 12, max drawdown $8,968.
 
-Both strategies: **one trade per day** (`DAILY_MAX_TRADES`), one loss ends the day, the day locks at +$1,500.
+Both strategies: one loss ends the day and the day locks at +$1,500. The Asia sweep takes one trade per
+session by design; the level sweep can trade again after a win. (`DAILY_MAX_TRADES = 1` would cap both at one.)
 
 ## The rules (`strategy.py`, `manage.py`, `config.py`)
 Times are New York time. Entries only in the **Asia session, 7pm–2am**.

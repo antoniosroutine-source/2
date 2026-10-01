@@ -83,7 +83,8 @@ class DayGuard:
             return False, "outside the entry window"
         if self.losses >= self.p.DAILY_MAX_LOSSES:
             return False, "daily stop: a losing trade today"
-        if self.trades >= getattr(self.p, "DAILY_MAX_TRADES", 99):
+        cap = getattr(self.p, "DAILY_MAX_TRADES", None)
+        if cap and self.trades >= cap:
             return False, "daily stop: today's trade is done (one trade per day)"
         if self.pnl >= self.p.DAILY_PROFIT_STOP_USD:
             return False, f"daily stop: +${self.pnl:.0f} today (consistency cap)"
