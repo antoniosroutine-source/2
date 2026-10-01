@@ -602,6 +602,8 @@ class AsiaSweepTests(unittest.TestCase):
         s, sig = self.feed_session([Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)], live=False)
         self.assertIsNone(sig)
         self.assertIn("before the bot started", s.note)
+        s.on_bar(Bar(ny(6, 18, 10), 30010, 30012, 30000, 30005, v=100), 0.0, live=False)   # next evening, pre-session
+        self.assertIn("waiting for the next Asia session", s.note)
 
 
 def _asia_trail_test(self):

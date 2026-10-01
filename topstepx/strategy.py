@@ -247,6 +247,7 @@ class AsiaRangeSweep:
     def on_bar(self, b, agg, walls=None, live=True):
         sdate, mos = asia_clock(b.t)
         if mos >= self.exit_min:
+            self.note = "waiting for the next Asia session (7pm NY)"
             return None
         if sdate != self.session:
             self.session, self.high, self.low, self.range_bars = sdate, None, None, 0
