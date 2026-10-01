@@ -125,7 +125,7 @@ class ManageTests(unittest.TestCase):
         self.assertEqual(next_stop("short", 100, 120, 60, 12, 2.0, 0.25, p), 74.0)
 
     def test_one_loss_ends_the_day(self):
-        g = DayGuard(params())
+        g = DayGuard(params(DAILY_MAX_TRADES=99))          # the loss rule on its own
         t = ny(5, 20)
         self.assertTrue(g.can_enter(t)[0])
         g.record(t, -30)                                   # a scratch
@@ -135,7 +135,7 @@ class ManageTests(unittest.TestCase):
         self.assertTrue(g.can_enter(ny(6, 20))[0])         # next trading day
 
     def test_profit_stop_and_window(self):
-        g = DayGuard(params())
+        g = DayGuard(params(DAILY_MAX_TRADES=99))          # the profit cap on its own
         g.record(ny(5, 20), 1510)
         self.assertIn("consistency", g.can_enter(ny(5, 21))[1])
         self.assertFalse(DayGuard(params()).can_enter(ny(6, 10))[0])   # 10am: outside Asia
@@ -502,6 +502,14 @@ class PersistenceTests(unittest.TestCase):
             self.assertFalse(g2.can_enter(ny(5, 21))[0])
             self.assertTrue(g2.can_enter(ny(6, 20))[0])    # a new trading day
 
+    def test_one_trade_per_day(self):
+        g = DayGuard(params())
+        g.record(ny(5, 20), 900.0)                         # a win
+        ok, why = g.can_enter(ny(5, 21))
+        self.assertFalse(ok)
+        self.assertIn("one trade per day", why)
+        self.assertTrue(g.can_enter(ny(6, 20))[0])
+
     def test_live_record_does_not_double_count(self):
         g = DayGuard(params())
         g.set_day_pnl(ny(5, 20), 600.0)
@@ -595,8 +603,24 @@ class AsiaSweepTests(unittest.TestCase):
         self.assertIn("before the bot started", s.note)
 
 
-def _asia_time_exit_test(self):
+def _asia_trail_test(self):
+    """With ASIA_TRAIL on (the default), the Asia sweep trade moves to breakeven and trails."""
     with mock.patch.object(config, "STRATEGY", "asia_sweep"):
+        bars = AsiaSweepTests.range_bars(self) + [Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)]
+        broker = bot.PaperBroker(2.0, 0.74, 0.25)
+        b, client = self.make_bot(bars, broker)
+        self.feed(b, client, bars)
+        t = b.trade
+        self.assertTrue(t["trail"])
+        # 8 MNQ = $16/pt: +$785 needs ~49 pts; at +60 pts the stop keeps 65% of it
+        b.last_bar_t = ny(5, 20, 20)
+        b.last_close = t["entry"] + 60
+        b.step(ny(5, 20, 21))
+        self.assertEqual(b.trade["stop"], t["entry"] + 39.0)
+
+
+def _asia_time_exit_test(self):
+    with mock.patch.object(config, "STRATEGY", "asia_sweep"), mock.patch.object(config, "ASIA_TRAIL", False):
         bars = AsiaSweepTests.range_bars(self) + [Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)]
         broker = bot.PaperBroker(2.0, 0.74, 0.25)
         b, client = self.make_bot(bars, broker)
@@ -614,6 +638,7 @@ def _asia_time_exit_test(self):
 
 
 BotTests.test_paper_asia_sweep_time_exit_without_trail = _asia_time_exit_test
+BotTests.test_paper_asia_sweep_trails = _asia_trail_test
 
 
 if __name__ == "__main__":

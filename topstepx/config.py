@@ -30,6 +30,7 @@ TRAIL_KEEP = 0.65                 # trail keeps 65% of the best open profit
 TARGET_CAP_USD = 1500.0           # take profit never more than this (Topstep consistency rule)
 MIN_TARGET_USD = 800.0            # skip trades whose target pays less (BE and trail must be reachable)
 DAILY_MAX_LOSSES = 1              # stop for the day after one losing trade
+DAILY_MAX_TRADES = 1              # at most one trade per trading day, win or lose
 LOSS_THRESHOLD_USD = -50.0        # a trade that loses less than this (a scratch) is not a loss
 DAILY_PROFIT_STOP_USD = 1500.0    # stop for the day once the day's P&L reaches this
 
@@ -53,7 +54,7 @@ ASIA_MIN_STOP_PTS = 30.0          # ...and at least 30 points from entry
 ASIA_MIN_RANGE_PCT = 0.001        # skip sessions whose range is under 0.1% of price
 ASIA_RR = 3.33                    # target = 3.33x the stop distance (capped at TARGET_CAP_USD)
 ASIA_MIN_CONTRACTS = 1            # smaller sizes are allowed: wide stops still risk <= MAX_RISK_USD
-ASIA_TRAIL = False                # True: also use the breakeven/65% trail; False: pure TP/SL like MFP
+ASIA_TRAIL = True                 # breakeven at +$650, then trail keeping 65% from +$785 (False: pure TP/SL)
 
 SWING_K = 2                       # a swing high/low needs this many bars either side (1-minute bars)
 STRUCTURE_LOOKBACK_BARS = 180     # swings older than 3 hours are ignored

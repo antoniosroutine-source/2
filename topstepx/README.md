@@ -67,6 +67,17 @@ Four independent reviews (quant, prop-firm risk, order-flow trader, systems engi
    (`MAX_RISK_USD`; note `MIN_CONTRACTS` must allow the smaller size).
    **Kill rules:** 6 losses in a row, −$1,250 from the peak, win rate under 30% after 30 trades, or any rule email.
 
+## Strategies
+Pick with `set PX_STRATEGY=...` before `python bot.py`:
+- `level_sweep` (default): the trader's levels + aggression, described below.
+- `asia_sweep`: the MFP bot's **Asia range fakeout**. Range 7–8pm NY; fade a sweep of the range that closes
+  back inside until 1am; stop beyond the wick (+10% of the range, at least 30 points); target 3.33× the stop,
+  capped at $1,500; time exit at 3am. Sized to ≤ $500 at the stop (about 8 MNQ on a 30-point stop).
+  Uses the same **breakeven at +$650 and 65% trail from +$785** (`ASIA_TRAIL`). Two-year backtest with these
+  settings: 308 trades, 37% wins, +$4,324, worst losing streak 12, max drawdown $8,968.
+
+Both strategies: **one trade per day** (`DAILY_MAX_TRADES`), one loss ends the day, the day locks at +$1,500.
+
 ## The rules (`strategy.py`, `manage.py`, `config.py`)
 Times are New York time. Entries only in the **Asia session, 7pm–2am**.
 1. **Bias (logged):** the NY session's reaction (dump → recovery longs, rally → shorts), the 1-hour trend,
