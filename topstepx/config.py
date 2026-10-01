@@ -41,6 +41,20 @@ FLAT_BY = "08:25"                 # any open trade is closed before the 8:30am E
 DAY_START = "18:00"               # the futures trading day starts at 6pm ET
 
 # --- Strategy ------------------------------------------------------------------------
+# "level_sweep" (the trader's levels + aggression) or "asia_sweep" (the MFP bot's Asia range fakeout)
+STRATEGY = os.environ.get("PX_STRATEGY", "level_sweep")
+
+# Asia range sweep (STRATEGY = "asia_sweep")
+ASIA_RANGE_MIN = 60               # range = the first 60 minutes from 7pm NY
+ASIA_TRADE_UNTIL = "01:00"        # no new entries after 1am NY
+ASIA_EXIT_AT = "03:00"            # an open trade is closed at 3am NY (London open)
+ASIA_BUF_FRAC = 0.1               # stop sits 10% of the range width beyond the sweep wick...
+ASIA_MIN_STOP_PTS = 30.0          # ...and at least 30 points from entry
+ASIA_MIN_RANGE_PCT = 0.001        # skip sessions whose range is under 0.1% of price
+ASIA_RR = 3.33                    # target = 3.33x the stop distance (capped at TARGET_CAP_USD)
+ASIA_MIN_CONTRACTS = 1            # smaller sizes are allowed: wide stops still risk <= MAX_RISK_USD
+ASIA_TRAIL = False                # True: also use the breakeven/65% trail; False: pure TP/SL like MFP
+
 SWING_K = 2                       # a swing high/low needs this many bars either side (1-minute bars)
 STRUCTURE_LOOKBACK_BARS = 180     # swings older than 3 hours are ignored
 CONFIRM_BARS = 3                  # after the sweep, sellers/buyers must take over within this many bars

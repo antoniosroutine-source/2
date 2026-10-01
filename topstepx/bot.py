@@ -23,7 +23,7 @@ from levels import Aggression, et, trading_day
 from manage import DayGuard, next_stop
 from projectx import (ORDER_LIMIT, ORDER_MARKET, ORDER_STOP, POS_LONG, SIDE_BUY, SIDE_SELL,
                       PXError, ProjectX)
-from strategy import LevelSweep
+from strategy import make_strategy
 from stream import MarketStream, Recorder
 from ui import Desk, serve
 
@@ -214,7 +214,7 @@ class Bot:
         self.mode = mode                     # "paper", "confirm" or "auto"
         self.live = mode != "paper"
         self.cid = contract["id"]
-        self.strategy = LevelSweep(config, config.TICK_SIZE, config.POINT_VALUE)
+        self.strategy = make_strategy(config, config.TICK_SIZE, config.POINT_VALUE)
         self.bar_agg = Aggression(config.AGG_WINDOW_MIN)
         self.tape_agg = Aggression(config.AGG_WINDOW_MIN)
         recorder = Recorder(config.RECORD_DIR) if record else None
@@ -396,7 +396,7 @@ class Bot:
             self.desk.event(f"{sig['side']} not taken: {why}")
             return
         tick = config.TICK_SIZE
-        stop_ticks = round((config.FIXED_STOP_PTS or abs(sig["entry"] - sig["stop"])) / tick)
+        stop_ticks = round((self._fixed_stop(sig) or abs(sig["entry"] - sig["stop"])) / tick)
         target_ticks = round(abs(sig["target"] - sig["entry"]) / tick)
         tag = f"ls-{int(now)}"
         self.pending_entry = {"sent": now, "sig": sig, "tag": tag}
@@ -418,6 +418,11 @@ class Bot:
             return
         self._adopt(self.broker.position(), now)
 
+    @staticmethod
+    def _fixed_stop(sig):
+        """The strict stop distance applies to the level sweep; the Asia sweep stops at its structure."""
+        return config.FIXED_STOP_PTS if sig.get("strategy", "level_sweep") == "level_sweep" else None
+
     def _adopt(self, pos, now):
         """Start managing a position the bot's own entry created."""
         sig = self.pending_entry["sig"]
@@ -426,10 +431,12 @@ class Bot:
             return
         d = 1 if pos["side"] == "long" else -1
         tick = config.TICK_SIZE
-        stop = pos["entry"] - d * round((config.FIXED_STOP_PTS or abs(sig["entry"] - sig["stop"])) / tick) * tick
+        stop = pos["entry"] - d * round((self._fixed_stop(sig) or abs(sig["entry"] - sig["stop"])) / tick) * tick
         target = pos["entry"] + d * round(abs(sig["target"] - sig["entry"]) / tick) * tick
         self.trade = {"side": pos["side"], "size": pos["size"], "entry": pos["entry"], "stop": stop,
-                      "initial_stop": stop, "target": target, "peak": pos["entry"], "opened": now}
+                      "initial_stop": stop, "target": target, "peak": pos["entry"], "opened": now,
+                      "exit_by": sig.get("exit_by"),
+                      "trail": sig.get("strategy", "level_sweep") == "level_sweep" or config.ASIA_TRAIL}
         log("trade_open", **self.trade, risk_usd=sig.get("risk_usd"), reward_usd=sig.get("reward_usd"),
             bias=sig.get("bias"))
         self.desk.event(f"OPEN {pos['side']} {pos['size']} @ {pos['entry']}  stop {stop}  target {target}")
@@ -446,6 +453,10 @@ class Bot:
             self.broker.flatten(price)
             log("flatten", reason=f"flat before the {config.FLAT_BY} ET news window")
             return
+        if t.get("exit_by") and now >= t["exit_by"]:
+            self.broker.flatten(price)
+            log("flatten", reason="time exit (3am NY, London open)")
+            return
         if price:
             t["peak"] = max(t["peak"], price) if d > 0 else min(t["peak"], price)
             open_pnl = (price - t["entry"]) * d * t["size"] * config.POINT_VALUE
@@ -453,6 +464,8 @@ class Bot:
                 self.broker.flatten(price)
                 log("flatten", reason=f"day reached +${config.DAILY_PROFIT_STOP_USD:.0f} with the open trade (consistency)")
                 return
+        if not t.get("trail", True):
+            return
         new = next_stop(t["side"], t["entry"], t["stop"], t["peak"], t["size"], config.POINT_VALUE,
                         config.TICK_SIZE, config)
         if new == t["stop"] or now - self.last_stop_move < 3:
@@ -490,7 +503,8 @@ class Bot:
         self.trade = None
 
     def run(self):
-        log("start", mode=self.mode.upper(), account=self.account.get("name"), contract=self.contract["name"],
+        log("start", mode=self.mode.upper(), strategy=config.STRATEGY, account=self.account.get("name"),
+            contract=self.contract["name"],
             tick=config.TICK_SIZE, point_value=config.POINT_VALUE)
         self.warm_up()
         self.stream.start()

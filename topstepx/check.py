@@ -11,7 +11,7 @@ import time
 import bot
 import config
 from levels import Aggression, et
-from strategy import LevelSweep
+from strategy import make_strategy
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
     bars = client.bars_range(contract["id"], end - dt.timedelta(days=3), end, live=config.LIVE_DATA)
     bars = [b for b in bars if b.t + 60 <= time.time()]
     print(f"\nLoaded {len(bars)} one-minute bars; last: {et(bars[-1].t):%Y-%m-%d %H:%M} NY, close {bars[-1].c}")
-    strat = LevelSweep(config, config.TICK_SIZE, config.POINT_VALUE)
+    strat = make_strategy(config, config.TICK_SIZE, config.POINT_VALUE)
     agg = Aggression(config.AGG_WINDOW_MIN)
     for b in bars:
         agg.add_bar(b)

@@ -555,5 +555,66 @@ class BacktestTests(unittest.TestCase):
         self.assertAlmostEqual(trades[0]["pnl"], (83.75 - 21.5) * 24 - 0.74 * 12, places=2)   # short fills 1 tick lower
 
 
+
+class AsiaSweepTests(unittest.TestCase):
+    def range_bars(self, day=5):
+        # Monday 5 Oct 2026, 19:00-19:59 NY: a 60-point range 30000-30060
+        return [Bar(ny(day, 19, m), 30030, 30060 if m == 10 else 30040, 30000 if m == 20 else 30020, 30030, v=100)
+                for m in range(60)]
+
+    def feed_session(self, extra, p=None, live=True):
+        from strategy import make_strategy
+        s = make_strategy(p or params(STRATEGY="asia_sweep"), 0.25, 2.0)
+        out = None
+        for b in self.range_bars() + extra:
+            out = s.on_bar(b, 0.0, live=live) or out
+        return s, out
+
+    def test_long_fakeout_below_the_range(self):
+        _, sig = self.feed_session([Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)])
+        self.assertEqual((sig["strategy"], sig["side"], sig["entry"]), ("asia_sweep", "long", 30005))
+        self.assertEqual(sig["stop"], 29975)                    # wick - 6 = 29984, but 30 pts minimum
+        self.assertEqual(sig["size"], 8)                        # 500 // (30 * 2 + 0.74)
+        self.assertEqual(sig["target"], 30005 + 1500 / 16)      # 3.33R = 99.9 pts, capped at $1,500
+        self.assertEqual(sig["exit_by"], ny(6, 3, 0))
+
+    def test_trend_session_and_one_per_session(self):
+        _, sig = self.feed_session([Bar(ny(5, 20, 5), 30060, 30130, 30060, 30125, v=100),
+                           Bar(ny(5, 20, 6), 30125, 30126, 29990, 30005, v=100)])
+        self.assertIsNone(sig)
+        s, sig = self.feed_session([Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100),
+                           Bar(ny(5, 20, 30), 30050, 30075, 30045, 30055, v=100)])
+        self.assertEqual(sig["side"], "long")                   # the later short sweep is ignored
+        self.assertTrue(s.done)
+
+    def test_no_late_entries_and_warm_up(self):
+        _, sig = self.feed_session([Bar(ny(6, 1, 5), 30010, 30012, 29990, 30005, v=100)])
+        self.assertIsNone(sig)                                  # 1:05am: after the entry window
+        s, sig = self.feed_session([Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)], live=False)
+        self.assertIsNone(sig)
+        self.assertIn("before the bot started", s.note)
+
+
+def _asia_time_exit_test(self):
+    with mock.patch.object(config, "STRATEGY", "asia_sweep"):
+        bars = AsiaSweepTests.range_bars(self) + [Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)]
+        broker = bot.PaperBroker(2.0, 0.74, 0.25)
+        b, client = self.make_bot(bars, broker)
+        self.feed(b, client, bars)
+        self.assertEqual(b.trade["side"], "long")
+        self.assertFalse(b.trade["trail"])
+        b.last_bar_t = ny(6, 2, 58)
+        b.last_close = 30060.0                              # +55 pts: the trail would have moved the stop
+        b.step(ny(6, 2, 59))
+        self.assertEqual(b.trade["stop"], b.trade["initial_stop"])
+        b.last_bar_t = ny(6, 2, 59)
+        b.step(ny(6, 3, 0))
+        self.assertIn("time exit", " ".join(e.get("reason", "") for e in self.events()))
+        self.assertIsNone(broker.pos)
+
+
+BotTests.test_paper_asia_sweep_time_exit_without_trail = _asia_time_exit_test
+
+
 if __name__ == "__main__":
     unittest.main()

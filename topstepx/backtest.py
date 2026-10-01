@@ -20,12 +20,12 @@ import sys
 import config
 from levels import Aggression, et, trading_day
 from manage import DayGuard, next_stop
-from strategy import Bar, LevelSweep
+from strategy import Bar, make_strategy
 
 
 def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
     """accept(signal) -> bool lets a study filter signals (e.g. by bias) without changing the strategy."""
-    strat = LevelSweep(p, tick, pv)
+    strat = make_strategy(p, tick, pv)
     agg = Aggression(p.AGG_WINDOW_MIN)
     guard = DayGuard(p)
     trades, skips, pos = [], [], None
@@ -43,6 +43,8 @@ def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
                 exit_px, reason = pos["day_cap"], "day_cap"      # the day reached +$1,500 with this trade
             elif guard.must_flatten(b.t):
                 exit_px, reason = b.o - d * slip, "flat_by"
+            elif pos.get("exit_by") and b.t >= pos["exit_by"]:
+                exit_px, reason = b.o - d * slip, "time_exit"
             if exit_px is not None:
                 pnl = (exit_px - pos["entry"]) * d * pos["size"] * pv - p.FEE_PER_CONTRACT_RT * pos["size"]
                 if reason == "stop" and pos["stop"] != pos["initial_stop"]:
@@ -54,7 +56,8 @@ def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
                 pos = None
             else:
                 pos["peak"] = max(pos["peak"], b.h) if d > 0 else min(pos["peak"], b.l)
-                pos["stop"] = next_stop(pos["side"], pos["entry"], pos["stop"], pos["peak"],
+                if pos["trail"]:
+                    pos["stop"] = next_stop(pos["side"], pos["entry"], pos["stop"], pos["peak"],
                                         pos["size"], pv, tick, p)
         agg.add_bar(b)
         sig = strat.on_bar(b, agg.ratio(b.t + 60), live=True)
@@ -68,11 +71,13 @@ def simulate(bars, p, tick, pv, slippage_ticks=1, accept=None):
             continue
         d = 1 if sig["side"] == "long" else -1
         entry = sig["entry"] + d * slip
-        stop = entry - d * p.FIXED_STOP_PTS if p.FIXED_STOP_PTS else sig["stop"]   # linked bracket: from the fill
+        fixed = p.FIXED_STOP_PTS if sig.get("strategy", "level_sweep") == "level_sweep" else None
+        stop = entry - d * fixed if fixed else sig["stop"] + d * slip   # the bracket is placed from the fill
         room = p.DAILY_PROFIT_STOP_USD - guard.pnl + p.FEE_PER_CONTRACT_RT * sig["size"]
         pos = {"side": sig["side"], "size": sig["size"], "entry": entry, "stop": stop,
                "initial_stop": stop, "target": sig["target"], "peak": entry, "opened": b.t + 60,
-               "day_cap": entry + d * room / (sig["size"] * pv)}
+               "day_cap": entry + d * room / (sig["size"] * pv), "exit_by": sig.get("exit_by"),
+               "trail": sig.get("strategy", "level_sweep") == "level_sweep" or p.ASIA_TRAIL}
     return trades, skips
 
 

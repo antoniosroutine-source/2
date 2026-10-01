@@ -206,3 +206,115 @@ class LevelSweep:
     def state(self):
         return {"note": self.note, "pending": self.pending, "bias": self.bias,
                 "levels": self.levels, "swing_highs": self.highs[-3:], "swing_lows": self.lows[-3:]}
+
+
+def asia_clock(ts, start="19:00"):
+    """(session date, minutes since the Asia session started) for ts, in New York time."""
+    import datetime as dt
+    from levels import ET, minutes
+    t = dt.datetime.fromtimestamp(ts, ET) - dt.timedelta(minutes=minutes(start))
+    return t.date(), t.hour * 60 + t.minute
+
+
+class AsiaRangeSweep:
+    """Asia range liquidity sweep (fakeout), ported from the MFP bot. 1-minute bars, New York time.
+
+    1. Range: high/low of the first ASIA_RANGE_MIN minutes of the session (19:00-20:00).
+    2. Sweep: until ASIA_TRADE_UNTIL (01:00) a bar trades beyond one side of the range and closes
+       back inside: fade it at that close. Never on a breakout; a close a full range width outside
+       means a trend session, and the session is skipped.
+    3. Stop beyond the sweep wick plus ASIA_BUF_FRAC of the range width, at least ASIA_MIN_STOP_PTS
+       from entry. Target ASIA_RR x the stop distance, capped at TARGET_CAP_USD.
+    4. One trade per session; no Friday/Saturday evening sessions; flat by ASIA_EXIT_AT (03:00).
+    Size: as many MNQ as keep the loss at the stop, fees included, <= MAX_RISK_USD.
+    """
+    id = "asia_sweep"
+
+    def __init__(self, p, tick_size, point_value):
+        self.p, self.tick, self.pv = p, tick_size, point_value
+        self.session = None
+        self.high = self.low = None
+        self.range_bars = 0
+        self.done = False
+        self.levels, self.bias = [], {}
+        self.note = "waiting for the Asia session"
+        from levels import minutes
+        self.until = minutes(p.ASIA_TRADE_UNTIL) - minutes("19:00") + 24 * 60
+        self.exit_min = minutes(p.ASIA_EXIT_AT) - minutes("19:00") + 24 * 60
+
+    round_tick = LevelSweep.round_tick
+
+    def on_bar(self, b, agg, walls=None, live=True):
+        sdate, mos = asia_clock(b.t)
+        if mos >= self.exit_min:
+            return None
+        if sdate != self.session:
+            self.session, self.high, self.low, self.range_bars = sdate, None, None, 0
+            self.done = sdate.weekday() >= 4      # Friday/Saturday evening: no session
+            self.note = "weekend: no session" if self.done else "building the Asia range"
+        if self.done:
+            return None
+        p = self.p
+        if mos < p.ASIA_RANGE_MIN:
+            self.high = b.h if self.high is None else max(self.high, b.h)
+            self.low = b.l if self.low is None else min(self.low, b.l)
+            self.range_bars += 1
+            self.levels = [{"price": self.high, "label": "asia_range_high"},
+                           {"price": self.low, "label": "asia_range_low"}]
+            return None
+        if self.range_bars < p.ASIA_RANGE_MIN * 0.7 or self.high - self.low < p.ASIA_MIN_RANGE_PCT * self.high:
+            self.done, self.note = True, "range incomplete or too narrow: skipping the session"
+            return None
+        if mos >= self.until:
+            self.done, self.note = True, "trade window over"
+            return None
+        w = self.high - self.low
+        if b.c > self.high + w or b.c < self.low - w:
+            self.done, self.note = True, "trend session: standing aside"
+            return None
+        side = None
+        if b.h > self.high and b.c < self.high:
+            side, wick = "short", b.h
+        elif b.l < self.low and b.c > self.low:
+            side, wick = "long", b.l
+        if not side:
+            self.note = f"range {self.low:.2f}-{self.high:.2f}: watching for a sweep"
+            return None
+        self.done = True
+        if not live:
+            self.note = "a sweep happened before the bot started: skipping the session"
+            return None
+        return self._signal(side, wick, b, agg)
+
+    def _signal(self, side, wick, b, agg):
+        p = self.p
+        d = -1 if side == "short" else 1
+        entry = b.c
+        buf = p.ASIA_BUF_FRAC * (self.high - self.low)
+        stop = wick - d * buf
+        if (entry - stop) * d < p.ASIA_MIN_STOP_PTS:
+            stop = entry - d * p.ASIA_MIN_STOP_PTS
+        stop = self.round_tick(stop, up=(side == "short"))
+        stop_pts = (entry - stop) * d
+        size = min(p.MAX_CONTRACTS, int(p.MAX_RISK_USD // (stop_pts * self.pv + p.FEE_PER_CONTRACT_RT)))
+        base = {"side": side, "entry": entry, "stop": stop, "stop_pts": stop_pts, "agg": round(agg, 3),
+                "bias": self.bias, "ref": self.high if side == "short" else self.low, "strategy": self.id}
+        if size < p.ASIA_MIN_CONTRACTS:
+            self.note = f"{side} skipped: {stop_pts:.2f}-pt stop is too wide for ${p.MAX_RISK_USD:.0f}"
+            return {**base, "skip": self.note}
+        per_pt = size * self.pv
+        reward_pts = min(p.ASIA_RR * stop_pts, p.TARGET_CAP_USD / per_pt)
+        target = self.round_tick(entry + d * reward_pts, up=(side == "short"))
+        ny_end = (b.t // 60) * 60 + (self.exit_min - asia_clock(b.t)[1]) * 60
+        self.note = f"{side} signal at {entry}"
+        return {**base, "size": size, "target": target, "exit_by": ny_end,
+                "risk_usd": round(size * (stop_pts * self.pv + p.FEE_PER_CONTRACT_RT), 2),
+                "reward_usd": round((target - entry) * d * per_pt, 2)}
+
+    def state(self):
+        return {"note": self.note, "session": str(self.session), "range_high": self.high,
+                "range_low": self.low, "done": self.done}
+
+
+def make_strategy(p, tick_size, point_value):
+    return {"level_sweep": LevelSweep, "asia_sweep": AsiaRangeSweep}[p.STRATEGY](p, tick_size, point_value)
