@@ -43,8 +43,8 @@ def main():
 
     print(f"\nAccount: {account.get('name')}   Contract: {contract['name']}")
     answer = input(f"Place a REAL 1 MNQ {args.side.upper()} market order with a 20-point stop and target, "
-                   f"then close it after {args.hold} s? Type YES to go: ")
-    if answer.strip() != "YES":
+                   f"then close it after {args.hold} s? Type YES and press Enter: ")
+    if answer.strip().lower() not in ("yes", "y"):
         sys.exit("Cancelled. Nothing was placed.")
 
     print("\n1) Sending the market order with linked stop and target...")
