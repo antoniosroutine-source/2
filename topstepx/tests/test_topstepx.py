@@ -219,9 +219,16 @@ class ClientTests(unittest.TestCase):
         c.token, c.token_time = "T", 1e18
         ok = FakeResp(json.dumps({"success": True, "orderId": 3}).encode())
         with mock.patch("urllib.request.urlopen", return_value=ok) as m:
-            c.place(5, "CON", 2, 1, 12, tag="ls-1", stop_ticks=80, target_ticks=250)
+            c.place(5, "CON", 2, 1, 12, tag="ls-1", stop_ticks=80, target_ticks=250)    # sell (short)
         body = json.loads(m.call_args[0][0].data)
-        self.assertEqual(body["stopLossBracket"], {"ticks": 80, "type": 4})
+        self.assertEqual(body["stopLossBracket"], {"ticks": 80, "type": 4})        # stop above a short
+        self.assertEqual(body["takeProfitBracket"], {"ticks": -250, "type": 1})   # target below
+        ok = FakeResp(json.dumps({"success": True, "orderId": 4}).encode())
+        with mock.patch("urllib.request.urlopen", return_value=ok) as m:
+            c.place(5, "CON", 2, 0, 12, tag="ls-2", stop_ticks=80, target_ticks=250)    # buy (long)
+        body = json.loads(m.call_args[0][0].data)
+        # TopstepX: "Invalid stop loss ticks (80). Ticks should be less than zero when longing."
+        self.assertEqual(body["stopLossBracket"], {"ticks": -80, "type": 4})
         self.assertEqual(body["takeProfitBracket"], {"ticks": 250, "type": 1})
 
     def test_login_and_order_body(self):

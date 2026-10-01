@@ -132,10 +132,13 @@ class ProjectX:
         body = {"accountId": account_id, "contractId": contract_id, "type": order_type, "side": side,
                 "size": int(size), "limitPrice": limit_price, "stopPrice": stop_price, "trailPrice": None,
                 "customTag": tag, "stopLossBracket": None, "takeProfitBracket": None}
+        # ProjectX bracket ticks are signed relative to the fill: for a buy the stop is below
+        # (negative ticks) and the target above (positive); for a sell it is the other way round.
+        d = 1 if side == SIDE_BUY else -1
         if stop_ticks:
-            body["stopLossBracket"] = {"ticks": int(stop_ticks), "type": ORDER_STOP}
+            body["stopLossBracket"] = {"ticks": -d * abs(int(stop_ticks)), "type": ORDER_STOP}
         if target_ticks:
-            body["takeProfitBracket"] = {"ticks": int(target_ticks), "type": ORDER_LIMIT}
+            body["takeProfitBracket"] = {"ticks": d * abs(int(target_ticks)), "type": ORDER_LIMIT}
         return self._post("/api/Order/place", body, retries=1)["orderId"]
 
     def modify(self, account_id, order_id, stop_price=None, limit_price=None, size=None):
