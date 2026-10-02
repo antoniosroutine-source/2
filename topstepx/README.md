@@ -88,6 +88,13 @@ Pick with `set PX_STRATEGY=...` before `python bot.py`:
   max drawdown $4,429; 71% of Combines started on a random day pass before hitting the $2,000 MLL
   (expect 55-65% live: small sample). About one trade a week; a Combine takes about 7-8 weeks.
 
+**Gamma levels** (`gamma.py`, `GAMMA_MODE`): every 30 minutes the bot checks the free
+[haus-edge/gex-levels](https://github.com/haus-edge/gex-levels) feed (gamma flip, call wall, put wall,
+computed each trading day from QQQ options), converts the levels from Nasdaq cash to MNQ prices, shows
+them on the desk page and saves each day to `gamma/`. Every signal carries `"gamma"` with `toward_flip`.
+`GAMMA_MODE = "log"` (default) only records it; `"filter"` also skips fades aimed away from the flip
+(Apr-Sep 2026 backtest: toward the flip 30 trades, 47% wins, +$10,207; away 7 trades, 0 wins, -$3,367).
+
 Both strategies: one loss ends the day and the day locks at +$1,500. The Asia sweep takes one trade per
 session by design; the level sweep can trade again after a win. (`DAILY_MAX_TRADES = 1` would cap both at one.)
 

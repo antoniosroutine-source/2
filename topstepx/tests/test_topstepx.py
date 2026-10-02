@@ -132,6 +132,56 @@ class AsiaLiquidityTests(unittest.TestCase):
         self.assertEqual(out[2]["entry"], 208)
 
 
+GEX_FILE = """SYMBOL=QQQ
+UNDERLYING=30000.00
+TIMESTAMP=2026-10-05T16:30:00Z
+REGIME=positive_gamma
+GAMMA_FLIP=30100.00
+CALL_WALL=30500.00
+PUT_WALL=29500.00
+"""
+
+
+class GammaTests(unittest.TestCase):
+    def make(self, mode="log", fut=30150.0):
+        from gamma import Gamma
+        tmp = tempfile.mkdtemp()
+        p = params(GAMMA_MODE=mode, GAMMA_DIR=tmp, TICK_SIZE=0.25)
+        events = []
+        g = Gamma(p, lambda ts: fut, lambda ev, **k: events.append((ev, k)), fetch=lambda url: GEX_FILE)
+        return g, events, tmp
+
+    def test_levels_converted_to_futures_and_saved(self):
+        g, events, tmp = self.make()
+        now = dt.datetime(2026, 10, 5, 23, 0, tzinfo=dt.timezone.utc).timestamp()
+        g.refresh(now)
+        lv = g.levels()
+        self.assertEqual(lv["flip"], 30250.5)               # 30100 cash * 30150 MNQ / 30000 cash
+        self.assertEqual((lv["call_wall"], lv["put_wall"]), (30652.5, 29647.5))
+        self.assertEqual(os.listdir(tmp), ["2026-10-05.txt"])
+        self.assertEqual(events[0][0], "gamma")
+
+    def test_toward_flip_and_staleness(self):
+        g, _, _ = self.make()
+        now = dt.datetime(2026, 10, 5, 23, 0, tzinfo=dt.timezone.utc).timestamp()
+        g.refresh(now)
+        flip = g.levels()["flip"]
+        self.assertTrue(g.check({"side": "short", "entry": flip + 50}, now)["toward_flip"])
+        self.assertFalse(g.check({"side": "short", "entry": flip - 50}, now)["toward_flip"])
+        self.assertTrue(g.check({"side": "long", "entry": flip - 50}, now)["toward_flip"])
+        self.assertIsNone(g.check({"side": "long", "entry": flip - 50}, now + 40 * 3600))
+
+    def test_bad_feed_is_logged_not_raised(self):
+        from gamma import Gamma
+        events = []
+        def boom(url):
+            raise OSError("offline")
+        g = Gamma(params(), lambda ts: 1.0, lambda ev, **k: events.append(ev), fetch=boom)
+        g.refresh(1e9)
+        self.assertIsNone(g.snap)
+        self.assertEqual(events, ["gamma_error"])
+
+
 class ManageTests(unittest.TestCase):
     def test_breakeven_then_trail_65(self):
         p = params()
@@ -384,6 +434,7 @@ class BotTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.patches = [mock.patch.object(config, "LOG_FILE", os.path.join(self.tmp.name, "log.jsonl")),
                         mock.patch.object(config, "STATE_FILE", os.path.join(self.tmp.name, "state.json")),
+                        mock.patch.object(config, "GAMMA_MODE", "off"),
                         mock.patch("builtins.print")]
         for p in self.patches:
             p.start()
@@ -487,6 +538,21 @@ class BotTests(unittest.TestCase):
         with mock.patch.object(config, "COMBINE_TARGET_USD", None):
             px.bal = 52600.0
             self.assertEqual(b._combine_target(sig)["target"], 30093.75)
+
+    def test_gamma_filter_blocks_fades_away_from_the_flip(self):
+        from gamma import Gamma
+        b, _ = self.make_bot([], bot.PaperBroker(2.0, 0.74, 0.25))
+        now = dt.datetime(2026, 10, 5, 23, 0, tzinfo=dt.timezone.utc).timestamp()
+        b.gamma = Gamma(params(GAMMA_DIR=self.tmp.name), lambda ts: 30000.0, bot.log, fetch=lambda u: GEX_FILE)
+        b.gamma.refresh(now)                                                 # flip 30100 in MNQ prices
+        away = {"side": "short", "entry": 30050.0, "stop": 30080.0, "target": 29950.0, "size": 8}
+        with mock.patch.object(config, "GAMMA_MODE", "log"):
+            sig = b._gamma_check(away, now)
+            self.assertFalse(sig["gamma"]["toward_flip"])                    # logged, still traded
+        with mock.patch.object(config, "GAMMA_MODE", "filter"):
+            self.assertIsNone(b._gamma_check(away, now))
+            toward = dict(away, side="long", stop=30020.0, target=30150.0)
+            self.assertTrue(b._gamma_check(toward, now)["gamma"]["toward_flip"])
 
     def test_live_manage_flattens_mismatch_and_missing_stop(self):
         px = FakePX()

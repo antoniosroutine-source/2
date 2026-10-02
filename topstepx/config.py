@@ -69,6 +69,13 @@ AGG_WINDOW_MIN = 15               # aggression = buy vs sell volume over the las
 AGG_MIN_RATIO = 0.10              # |buy - sell| / total must be at least this to call aggression
 NY_MOVE_MIN_PTS = 50.0            # NY session move needed to call it a dump or a rally (bias log)
 
+# --- Gamma levels (free daily feed, computed from QQQ options) ---------------------------------
+GAMMA_MODE = "log"                # "off"; "log" = record whether each trade fades toward the gamma flip;
+                                  # "filter" = also skip fades aimed away from the flip (0 of 7 won, Apr-Sep 2026)
+GAMMA_URL = "https://raw.githubusercontent.com/haus-edge/gex-levels/master/data/gex_QQQ.txt"
+GAMMA_REFRESH_SEC = 1800          # check for a new snapshot every 30 minutes (published around midday ET)
+GAMMA_MAX_AGE_HOURS = 30          # an older snapshot is ignored
+
 # --- Order book (live only) ----------------------------------------------------------
 DOM_TARGETS = True                # front-run big resting orders between entry and target
 WALL_MIN_SIZE = 100               # a "wall" has at least this many contracts resting at one price...
@@ -94,3 +101,4 @@ LOG_FILE = os.path.join(HERE, "px_log.jsonl")
 STATE_FILE = os.path.join(HERE, "px_state.json")          # daily limits survive a restart
 RECORD_DIR = os.path.join(HERE, "recordings")             # one gzip file of tape + book per day
 DECISIONS_FILE = os.path.join(HERE, "decisions.jsonl")    # every Accept/Reject and "my setup" mark
+GAMMA_DIR = os.path.join(HERE, "gamma")                   # one file per daily gamma snapshot

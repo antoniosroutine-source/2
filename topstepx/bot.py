@@ -20,6 +20,7 @@ import sys
 import time
 
 import config
+from gamma import Gamma
 from levels import Aggression, et, trading_day
 from manage import DayGuard, next_stop
 from projectx import (ORDER_LIMIT, ORDER_MARKET, ORDER_STOP, POS_LONG, SIDE_BUY, SIDE_SELL,
@@ -242,7 +243,30 @@ class Bot:
         self.last_stale_log = 0.0
         self.foreign_logged = False
         self.last_bias = None
+        self.gamma = Gamma(config, self._price_at, log) if config.GAMMA_MODE != "off" else None
         self.running = True
+
+    def _price_at(self, ts):
+        """MNQ close of the minute at ts (to convert the gamma levels from cash to futures prices)."""
+        t = dt.datetime.fromtimestamp(ts, dt.timezone.utc)
+        bars = self.c.bars(self.cid, t - dt.timedelta(minutes=5), t + dt.timedelta(minutes=1), limit=10,
+                           live=config.LIVE_DATA)
+        return bars[-1].c if bars else None
+
+    def _gamma_check(self, sig, now):
+        """Attach the gamma levels to a signal; in "filter" mode drop fades aimed away from the flip."""
+        if not self.gamma:
+            return sig
+        g = self.gamma.check(sig, now)
+        sig = {**sig, "gamma": g}
+        if g is None:
+            log("gamma_missing", message="no fresh gamma levels: signal not checked", signal=sig)
+        elif config.GAMMA_MODE == "filter" and not g["toward_flip"]:
+            why = f"fade aimed away from the gamma flip ({g['flip']})"
+            log("entry_blocked", reason=why, signal=sig)
+            self.desk.event(f"{sig['side']} not taken: {why}")
+            return None
+        return sig
 
     def _token(self):
         self.c._ensure_token()
@@ -305,11 +329,23 @@ class Bot:
                     allow = bias.get("allow", "both")
                     self.desk.event(f"Bias: {bias['why']} -> " + ("longs and shorts" if allow == "both" else
                                     "no trade tonight" if allow == "none" else f"{allow}s only tonight"))
+            if sig and "skip" not in sig:
+                sig = self._gamma_check(sig, now)
             if sig:
                 log("signal", **sig)
                 if "skip" not in sig:
                     new_signal = sig
 
+        if self.gamma:
+            had = self.gamma.snap
+            try:
+                self.gamma.refresh(now)
+            except (PXError, OSError) as e:
+                log("gamma_error", error=str(e))
+            if self.gamma.snap is not had and self.gamma.snap:
+                g = self.gamma.levels()
+                self.desk.event(f"Gamma ({g['regime']}): flip {g['flip']}  call wall {g['call_wall']}  "
+                                f"put wall {g['put_wall']} (MNQ prices)")
         price = self.price()
         if price:
             self.broker.check(price, price, now)
