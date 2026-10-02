@@ -73,8 +73,11 @@ Pick with `set PX_STRATEGY=...` before `python bot.py`:
 - `asia_sweep`: the MFP bot's **Asia range fakeout**. Range 7–8pm NY; fade a sweep of the range that closes
   back inside until 1am; stop beyond the wick (+10% of the range, at least 30 points); target 3.33× the stop,
   capped at $1,500; time exit at 3am. Sized to ≤ $500 at the stop (about 8 MNQ on a 30-point stop).
-  Uses the same **breakeven at +$650 and 65% trail from +$785** (`ASIA_TRAIL`). Two-year backtest with these
-  settings: 308 trades, 37% wins, +$4,324, worst losing streak 12, max drawdown $8,968.
+  **Waits for liquidity** (`ASIA_LIQ_REACH = 0.5`): if an untaken session high/low (NY AM/PM, London,
+  previous day) or a big resting order sits within half a range width beyond the range, it fades the sweep
+  of that level instead of the range. **No trail** (`ASIA_TRAIL = False`): pure stop and target.
+  Two-year backtest (Sep 2024 - Sep 2026): 299 trades, 33% wins, +$16,671 (+$9,929 / +$6,742 by year),
+  max drawdown $6,899; about 40% of Combines started on a random day pass before hitting the $2,000 MLL.
 
 Both strategies: one loss ends the day and the day locks at +$1,500. The Asia sweep takes one trade per
 session by design; the level sweep can trade again after a win. (`DAILY_MAX_TRADES = 1` would cap both at one.)
