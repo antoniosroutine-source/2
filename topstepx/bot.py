@@ -13,6 +13,7 @@ order carries a linked stop and target, so one exit filling always cancels the o
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import signal
 import sys
@@ -87,6 +88,9 @@ class PaperBroker:
     def position(self):
         return self.pos
 
+    def balance(self):
+        return None           # paper mode: no Combine balance, the target is never shortened
+
     def enter(self, side, size, price, tag, stop_ticks, target_ticks):
         d = 1 if side == "long" else -1
         fill = price + d * self.tick
@@ -146,6 +150,12 @@ class LiveBroker:
 
     def working_orders(self):
         return [o for o in self.c.open_orders(self.acct) if o.get("contractId") == self.cid]
+
+    def balance(self):
+        for a in self.c.accounts():
+            if str(a.get("id")) == str(self.acct) and a.get("balance") is not None:
+                return float(a["balance"])
+        return None
 
     def enter(self, side, size, price, tag, stop_ticks, target_ticks):
         """Market order with a linked stop and target. Returns the fill price, or None if no position
@@ -231,6 +241,7 @@ class Bot:
         self.last_pnl_sync = 0.0
         self.last_stale_log = 0.0
         self.foreign_logged = False
+        self.last_bias = None
         self.running = True
 
     def _token(self):
@@ -286,6 +297,14 @@ class Bot:
                 self.trade["peak"] = max(self.trade["peak"], b.h) if d > 0 else min(self.trade["peak"], b.l)
             log("bar", t=f"{et(b.t):%H:%M}", o=b.o, h=b.h, l=b.l, c=b.c, agg=round(agg, 3), agg_source=source,
                 note=self.strategy.note, day_pnl=round(self.guard.pnl, 2))
+            bias = getattr(self.strategy, "bias", None)
+            if bias and bias != self.last_bias:
+                self.last_bias = bias
+                log("bias", **bias)
+                if bias.get("why"):
+                    allow = bias.get("allow", "both")
+                    self.desk.event(f"Bias: {bias['why']} -> " + ("longs and shorts" if allow == "both" else
+                                    "no trade tonight" if allow == "none" else f"{allow}s only tonight"))
             if sig:
                 log("signal", **sig)
                 if "skip" not in sig:
@@ -395,6 +414,7 @@ class Bot:
             log("entry_blocked", reason=why, signal=sig)
             self.desk.event(f"{sig['side']} not taken: {why}")
             return
+        sig = self._combine_target(sig)
         tick = config.TICK_SIZE
         stop_ticks = round((self._fixed_stop(sig) or abs(sig["entry"] - sig["stop"])) / tick)
         target_ticks = round(abs(sig["target"] - sig["entry"]) / tick)
@@ -417,6 +437,32 @@ class Bot:
             log("entry_pending", message="order sent; waiting for the position to appear", signal=sig)
             return
         self._adopt(self.broker.position(), now)
+
+    def _combine_target(self, sig):
+        """Combine: if the trade's target would pass the profit target with room to spare, aim only for
+        what is still needed (+$50 and fees). Losing less of a winner to a reversal near the goal."""
+        if not config.COMBINE_TARGET_USD:
+            return sig
+        try:
+            bal = self.broker.balance()
+        except (PXError, OSError) as e:
+            log("error", error=f"balance unavailable ({e}); target unchanged")
+            return sig
+        if bal is None:
+            return sig
+        need = config.COMBINE_START_BALANCE + config.COMBINE_TARGET_USD - bal
+        if need <= 0:
+            return sig
+        size, pv, tick = sig["size"], config.POINT_VALUE, config.TICK_SIZE
+        d = 1 if sig["side"] == "long" else -1
+        pts = (need + 50 + config.FEE_PER_CONTRACT_RT * size) / (size * pv)
+        pts = max(tick, math.ceil(pts / tick - 1e-9) * tick)
+        if pts >= abs(sig["target"] - sig["entry"]):
+            return sig
+        target = round(sig["entry"] + d * pts, 10)
+        log("target_shortened", balance=bal, still_needed=round(need, 2), old_target=sig["target"], target=target)
+        self.desk.event(f"${need:,.0f} left to pass the Combine: target shortened to {target}")
+        return {**sig, "target": target, "reward_usd": round(pts * size * pv, 2)}
 
     @staticmethod
     def _fixed_stop(sig):

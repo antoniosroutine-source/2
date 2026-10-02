@@ -113,7 +113,7 @@ class StrategyTests(unittest.TestCase):
 
 class AsiaLiquidityTests(unittest.TestCase):
     def run_asia(self, reach, sweeps):
-        s = AsiaRangeSweep(params(ASIA_LIQ_REACH=reach), 0.25, 2.0)
+        s = AsiaRangeSweep(params(ASIA_LIQ_REACH=reach, ASIA_MIN_RANGE_PTS=0), 0.25, 2.0)
         s.on_bar(Bar(ny(5, 14), 205, 210, 204, 206), 0.0)          # NY PM high 210
         for i in range(60):                                         # Asia range 195-200
             s.on_bar(Bar(ny(5, 19, i), 197, 200, 195, 197), 0.0)
@@ -296,6 +296,10 @@ class FakePX:
         self.pos = []
         self.fills = []
         self.reject = None
+        self.bal = 50000.0
+
+    def accounts(self):
+        return [{"id": 9, "name": "TEST", "balance": self.bal}]
 
     def place(self, acct, cid, typ, side, size, limit_price=None, stop_price=None, tag=None,
               stop_ticks=None, target_ticks=None):
@@ -470,6 +474,20 @@ class BotTests(unittest.TestCase):
         self.assertIn("Auto OCO", b.halted)
         self.assertIsNone(b.trade)
 
+    def test_combine_target_shortened_near_the_goal(self):
+        px = FakePX()
+        b, _ = self.make_bot([], bot.LiveBroker(px, 9, {"id": "CON"}), mode="auto")
+        sig = {"side": "long", "entry": 30000.0, "stop": 29970.0, "target": 30093.75, "size": 8}
+        self.assertEqual(b._combine_target(sig)["target"], 30093.75)        # $3,000 to go: unchanged
+        px.bal = 52600.0                                                     # $400 to go
+        out = b._combine_target(sig)
+        self.assertEqual(out["target"], 30000 + 28.5)                        # (400 + 50 + 8 * 0.74) / 16 = 28.495 -> 28.5
+        px.bal = 53100.0                                                     # already passed: unchanged
+        self.assertEqual(b._combine_target(sig)["target"], 30093.75)
+        with mock.patch.object(config, "COMBINE_TARGET_USD", None):
+            px.bal = 52600.0
+            self.assertEqual(b._combine_target(sig)["target"], 30093.75)
+
     def test_live_manage_flattens_mismatch_and_missing_stop(self):
         px = FakePX()
         b, client = self.make_bot([], bot.LiveBroker(px, 9, {"id": "CON"}), mode="auto")
@@ -588,8 +606,11 @@ class BacktestTests(unittest.TestCase):
 
 class AsiaSweepTests(unittest.TestCase):
     def range_bars(self, day=5):
-        # Monday 5 Oct 2026, 19:00-19:59 NY: a 60-point range 30000-30060
-        return [Bar(ny(day, 19, m), 30030, 30060 if m == 10 else 30040, 30000 if m == 20 else 30020, 30030, v=100)
+        # Monday 5 Oct 2026: NY dumps 30300 -> 30240 (Asia longs only; its levels are out of reach), then
+        # 19:00-19:59 NY a 60-point range 30000-30060
+        ny_dump = [Bar(ny(day, 9, 30), 30300, 30305, 30290, 30295, v=100),
+                   Bar(ny(day, 15, 59), 30245, 30250, 30235, 30240, v=100)]
+        return ny_dump + [Bar(ny(day, 19, m), 30030, 30060 if m == 10 else 30040, 30000 if m == 20 else 30020, 30030, v=100)
                 for m in range(60)]
 
     def feed_session(self, extra, p=None, live=True):
@@ -616,6 +637,24 @@ class AsiaSweepTests(unittest.TestCase):
                            Bar(ny(5, 20, 30), 30050, 30075, 30045, 30055, v=100)])
         self.assertEqual(sig["side"], "long")                   # the later short sweep is ignored
         self.assertTrue(s.done)
+
+    def test_ny_bias_and_minimum_range(self):
+        long_sweep = [Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)]
+        short_sweep = [Bar(ny(5, 20, 15), 30050, 30070, 30048, 30050, v=100)]
+        s, sig = self.feed_session(short_sweep)                  # NY dumped: shorts are skipped
+        self.assertIn("skip", sig)
+        self.assertEqual((s.bias["allow"], s.bias["ny_move"]), ("long", -60))
+        self.assertTrue(s.done)
+        s, sig = self.feed_session(short_sweep, p=params(STRATEGY="asia_sweep", ASIA_NY_BIAS=False))
+        self.assertEqual(sig["side"], "short")
+        self.assertEqual(sig["bias"]["ny_move"], -60)            # the bias is logged even when not enforced
+        _, sig = self.feed_session(long_sweep, p=params(STRATEGY="asia_sweep", ASIA_MIN_RANGE_PTS=61))
+        self.assertIsNone(sig)                                   # 60-pt range under the 61-pt minimum
+        s = AsiaRangeSweep(params(STRATEGY="asia_sweep"), 0.25, 2.0)   # no NY session (Sunday): no trade
+        for b in self.range_bars()[2:] + long_sweep:
+            sig = s.on_bar(b, 0.0) or sig
+        self.assertEqual(s.bias["allow"], "none")
+        self.assertIn("skip", sig)
 
     def test_no_late_entries_and_warm_up(self):
         _, sig = self.feed_session([Bar(ny(6, 1, 5), 30010, 30012, 29990, 30005, v=100)])

@@ -226,6 +226,9 @@ class AsiaRangeSweep:
     3. Stop beyond the sweep wick plus ASIA_BUF_FRAC of the range width, at least ASIA_MIN_STOP_PTS
        from entry. Target ASIA_RR x the stop distance, capped at TARGET_CAP_USD.
     4. One trade per session; no Friday/Saturday evening sessions; flat by ASIA_EXIT_AT (03:00).
+    Filters (council review): ASIA_NY_BIAS - trade against that day's NY session (NY dumped -> longs
+    only, NY rallied -> shorts only; no NY session, i.e. Sunday -> no trade); the session's first sweep
+    decides, so a sweep against the bias ends the session. ASIA_MIN_RANGE_PTS - skip narrow ranges.
     Size: as many MNQ as keep the loss at the stop, fees included, <= MAX_RISK_USD.
     """
     id = "asia_sweep"
@@ -257,6 +260,7 @@ class AsiaRangeSweep:
             self.session, self.high, self.low, self.range_bars = sdate, None, None, 0
             self.seen_hi = self.seen_lo = None
             self.liq = [lv["price"] for lv in self.sessions.levels(b.t)[0]]
+            self.bias = self._ny_bias(sdate)
             self.done = sdate.weekday() >= 4      # Friday/Saturday evening: no session
             self.note = "weekend: no session" if self.done else "building the Asia range"
         if self.done:
@@ -271,6 +275,11 @@ class AsiaRangeSweep:
             return None
         if self.range_bars < p.ASIA_RANGE_MIN * 0.7 or self.high - self.low < p.ASIA_MIN_RANGE_PCT * self.high:
             self.done, self.note = True, "range incomplete or too narrow: skipping the session"
+            return None
+        min_w = getattr(p, "ASIA_MIN_RANGE_PTS", 0) or 0
+        if self.high - self.low < min_w:
+            self.done = True
+            self.note = f"range {self.high - self.low:.2f} pts is under {min_w:g}: skipping the session"
             return None
         if mos >= self.until:
             self.done, self.note = True, "trade window over"
@@ -296,7 +305,26 @@ class AsiaRangeSweep:
         if not live:
             self.note = "a sweep happened before the bot started: skipping the session"
             return None
+        allow = self.bias.get("allow", "both")
+        if allow != "both" and allow != side:
+            only = "no trade" if allow == "none" else f"{allow}s only"
+            self.note = f"{side} sweep skipped: {self.bias.get('why')} ({only}); done for the session"
+            return {"side": side, "entry": b.c, "bias": self.bias, "strategy": self.id, "skip": self.note}
         return self._signal(side, wick, b, agg)
+
+    def _ny_bias(self, sdate):
+        """Today's NY session (09:30-16:00) move decides the Asia direction: NY dump -> Asia recovery."""
+        g = self.sessions.groups.get(("ny", sdate))
+        if not g:
+            info = {"why": "no NY session today", "ny_move": None}
+        else:
+            move = round(g["c"] - g["o"], 2)
+            info = {"ny_open": g["o"], "ny_close": g["c"], "ny_move": move,
+                    "why": f"NY {'dumped' if move < 0 else 'rallied' if move > 0 else 'closed flat'} {abs(move):.2f} pts"}
+        if not getattr(self.p, "ASIA_NY_BIAS", False):
+            return {**info, "allow": "both"}
+        m = info["ny_move"]
+        return {**info, "allow": "long" if m is not None and m < 0 else "short" if m is not None and m > 0 else "none"}
 
     def _fade_levels(self, w, walls):
         """The prices to fade. Normally the range high/low; but if untaken liquidity (a session
@@ -341,7 +369,7 @@ class AsiaRangeSweep:
 
     def state(self):
         return {"note": self.note, "session": str(self.session), "range_high": self.high,
-                "range_low": self.low, "done": self.done}
+                "range_low": self.low, "done": self.done, "bias": self.bias}
 
 
 def make_strategy(p, tick_size, point_value):

@@ -76,8 +76,17 @@ Pick with `set PX_STRATEGY=...` before `python bot.py`:
   **Waits for liquidity** (`ASIA_LIQ_REACH = 0.5`): if an untaken session high/low (NY AM/PM, London,
   previous day) or a big resting order sits within half a range width beyond the range, it fades the sweep
   of that level instead of the range. **No trail** (`ASIA_TRAIL = False`): pure stop and target.
-  Two-year backtest (Sep 2024 - Sep 2026): 299 trades, 33% wins, +$16,671 (+$9,929 / +$6,742 by year),
-  max drawdown $6,899; about 40% of Combines started on a random day pass before hitting the $2,000 MLL.
+  **Council filters:**
+  - `ASIA_NY_BIAS = True`: NY dumps, Asia recovers. If that day's NY session (9:30am-4pm) closed below its
+    open, Asia takes longs only; above, shorts only. No NY session (Sunday evening) means no trade. The
+    session's first sweep decides: a sweep against the bias ends the session. The bias is logged
+    (`"event": "bias"`) and shown on the desk page each evening.
+  - `ASIA_MIN_RANGE_PTS = 33`: skip sessions whose 7-8pm range is narrower than 33 points.
+  - `COMBINE_TARGET_USD = 3000`: close to passing, the take profit shrinks to what is still needed
+    (+$50 and fees), read from the account balance. **Set it to `None` once the account is funded.**
+  Two-year backtest (Sep 2024 - Sep 2026): 118 trades, 38% wins, +$20,242 (+$10,722 / +$9,520 by year),
+  max drawdown $4,429; 71% of Combines started on a random day pass before hitting the $2,000 MLL
+  (expect 55-65% live: small sample). About one trade a week; a Combine takes about 7-8 weeks.
 
 Both strategies: one loss ends the day and the day locks at +$1,500. The Asia sweep takes one trade per
 session by design; the level sweep can trade again after a win. (`DAILY_MAX_TRADES = 1` would cap both at one.)

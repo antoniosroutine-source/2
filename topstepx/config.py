@@ -33,6 +33,8 @@ DAILY_MAX_LOSSES = 1              # stop for the day after one losing trade
 DAILY_MAX_TRADES = None           # no cap (the Asia sweep takes one trade per session by design); e.g. 1 = one per day
 LOSS_THRESHOLD_USD = -50.0        # a trade that loses less than this (a scratch) is not a loss
 DAILY_PROFIT_STOP_USD = 1500.0    # stop for the day once the day's P&L reaches this
+COMBINE_START_BALANCE = 50000.0   # Combine only: near the profit target, the take profit shrinks to what
+COMBINE_TARGET_USD = 3000.0       # is still needed (+$50 and fees). Set COMBINE_TARGET_USD = None once funded.
 
 # --- Session (New York time) ----------------------------------------------------------
 ENTRY_START = "19:00"             # Asia session: new entries only between these times
@@ -56,6 +58,8 @@ ASIA_RR = 3.33                    # target = 3.33x the stop distance (capped at 
 ASIA_MIN_CONTRACTS = 1            # smaller sizes are allowed: wide stops still risk <= MAX_RISK_USD
 ASIA_LIQ_REACH = 0.5              # >0: if a session high/low (PM high etc.) or a big resting order sits within
                                   # this many range widths beyond the range, fade the sweep of THAT level, not the range
+ASIA_NY_BIAS = True               # NY dumped -> Asia longs only; NY rallied -> shorts only; Sunday -> no trade
+ASIA_MIN_RANGE_PTS = 33.0         # skip sessions whose 7-8pm range is narrower than this (0 = off)
 ASIA_TRAIL = False                # breakeven at +$650, then trail keeping 65% from +$785 (False: pure TP/SL)
 
 SWING_K = 2                       # a swing high/low needs this many bars either side (1-minute bars)
