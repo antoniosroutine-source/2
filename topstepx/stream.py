@@ -188,6 +188,20 @@ class MarketStream:
             else:
                 book.pop(float(price), None)
 
+    def top_walls(self, min_size, mult, price, n=4):
+        """Big resting orders nearest to price, with sizes: {"above": [(price, size)], "below": [...]}."""
+        with self.lock:
+            asks, bids = dict(self.asks), dict(self.bids)
+        out = {}
+        for key, book, above in (("above", asks, True), ("below", bids, False)):
+            if len(book) < 5 or price is None:
+                out[key] = []
+                continue
+            floor = max(min_size, mult * statistics.median(book.values()))
+            big = [(p, v) for p, v in book.items() if v >= floor and ((p > price) if above else (p < price))]
+            out[key] = sorted(big, key=lambda x: abs(x[0] - price))[:n]
+        return out
+
     def walls(self, side, min_size, mult):
         """Prices of big resting orders a trade is heading into: bids below for shorts, asks above for longs."""
         with self.lock:

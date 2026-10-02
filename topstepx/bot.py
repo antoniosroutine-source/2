@@ -21,7 +21,8 @@ import time
 
 import config
 from gamma import Gamma
-from levels import Aggression, et, trading_day
+from mylevels import MyLevels
+from levels import Aggression, et, in_window, trading_day
 from manage import DayGuard, next_stop
 from projectx import (ORDER_LIMIT, ORDER_MARKET, ORDER_STOP, POS_LONG, SIDE_BUY, SIDE_SELL,
                       PXError, ProjectX)
@@ -219,6 +220,14 @@ class LiveBroker:
 
 # -- the bot ---------------------------------------------------------------------------
 
+def _session_name(ts):
+    for name, (s, e) in (("Asia", ("18:00", "02:00")), ("London", ("02:00", "08:00")), ("NY AM", ("08:00", "12:00")),
+                         ("NY PM", ("12:00", "16:10"))):
+        if in_window(ts, s, e):
+            return name
+    return "Closed"
+
+
 class Bot:
     def __init__(self, client, account, contract, broker, mode, desk=None, record=False):
         self.c, self.account, self.contract, self.broker = client, account, contract, broker
@@ -244,6 +253,8 @@ class Bot:
         self.foreign_logged = False
         self.last_bias = None
         self.gamma = Gamma(config, self._price_at, log) if config.GAMMA_MODE != "off" else None
+        self.my_levels = MyLevels(config, self.desk._push, log)
+        self.desk.levels = self.my_levels
         self.running = True
 
     def _price_at(self, ts):
@@ -315,6 +326,7 @@ class Bot:
             self.bar_agg.add_bar(b)
             agg, source = self.aggression(b.t + 60)
             sig = self.strategy.on_bar(b, agg, walls=self.walls, live=True)
+            self.my_levels.update(b.l, b.h, b.t + 60)
             self.broker.check(b.h, b.l, b.t + 60)
             if self.trade:
                 d = 1 if self.trade["side"] == "long" else -1
@@ -349,10 +361,11 @@ class Bot:
         price = self.price()
         if price:
             self.broker.check(price, price, now)
+            self.my_levels.update(price, price, now)
         self._sync_day_pnl(now)
         self._stale_check(now)
         pos = self.broker.position()
-        self._update_desk(price, pos)
+        self._update_desk(price, pos, now)
 
         # reconcile the account with what the bot believes
         if self.trade and not pos:
@@ -408,12 +421,45 @@ class Bot:
                 "bias": self.strategy.bias, "levels": self.strategy.levels,
                 "walls_above": self.walls("long")[:5], "walls_below": self.walls("short")[:5]}
 
-    def _update_desk(self, price, pos):
-        agg, source = self.aggression(time.time())
-        self.desk.update(mode={"paper": "PAPER", "confirm": "LIVE (confirm)", "auto": "LIVE (auto)"}[self.mode],
-                         price=price, agg=round(agg, 3), agg_source=source, position=pos,
-                         stop=self.trade["stop"] if self.trade else None, day_pnl=round(self.guard.pnl, 2),
-                         losses=self.guard.losses, note=self.halted or self.strategy.note)
+    def _update_desk(self, price, pos, now):
+        agg, source = self.aggression(now)
+        t = self.trade
+        trade = None
+        if t:
+            d = 1 if t["side"] == "long" else -1
+            risk = abs(t["entry"] - t["initial_stop"]) * t["size"] * config.POINT_VALUE
+            open_pnl = None if price is None else (price - t["entry"]) * d * t["size"] * config.POINT_VALUE
+            trade = {"side": t["side"], "size": t["size"], "entry": t["entry"], "stop": t["stop"],
+                     "target": t["target"], "open_pnl": None if open_pnl is None else round(open_pnl, 2),
+                     "open_r": None if open_pnl is None or not risk else round(open_pnl / risk, 2),
+                     "minutes": round((now - t["opened"]) / 60)}
+        if self.live and now - getattr(self, "_bal_t", 0) > 60:
+            self._bal_t = now
+            try:
+                self._balance = self.broker.balance()
+            except (PXError, OSError):
+                pass
+        bal = getattr(self, "_balance", None)
+        combine = None
+        if bal is not None and config.COMBINE_TARGET_USD:
+            combine = {"balance": bal, "profit": round(bal - config.COMBINE_START_BALANCE, 2),
+                       "target": config.COMBINE_TARGET_USD}
+        can, why = self.guard.can_enter(now)
+        st = self.strategy.state() if hasattr(self.strategy, "state") else {}
+        g = self.gamma.levels() if self.gamma else {}
+        self.desk.update(
+            mode={"paper": "PAPER", "confirm": "LIVE (confirm)", "auto": "LIVE (auto)"}[self.mode],
+            strategy=config.STRATEGY, contract=self.contract.get("name"),
+            clock=et(now).strftime("%a %H:%M:%S ET"), session=_session_name(now),
+            price=price, agg=round(agg, 3), agg_source=source, position=pos, trade=trade,
+            stop=t["stop"] if t else None, day_pnl=round(self.guard.pnl, 2), losses=self.guard.losses,
+            trades=self.guard.trades, max_losses=config.DAILY_MAX_LOSSES, day_cap=config.DAILY_PROFIT_STOP_USD,
+            can_enter=can, why_not=None if can else why, combine=combine,
+            bias=st.get("bias") or {}, range_high=st.get("range_high"), range_low=st.get("range_low"),
+            gamma=g, walls=self.stream.top_walls(config.WALL_MIN_SIZE, config.WALL_MULT, price)
+            if self.stream.healthy() else {"above": [], "below": []},
+            data_age=round(now - (self.last_bar_t + 60)) if self.last_bar_t else None,
+            stream_ok=self.stream.healthy(), note=self.halted or self.strategy.note)
 
     def _stale_check(self, now):
         age = now - (self.last_bar_t + 60)

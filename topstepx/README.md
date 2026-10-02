@@ -68,9 +68,9 @@ Four independent reviews (quant, prop-firm risk, order-flow trader, systems engi
    **Kill rules:** 6 losses in a row, −$1,250 from the peak, win rate under 30% after 30 trades, or any rule email.
 
 ## Strategies
-Pick with `set PX_STRATEGY=...` before `python bot.py`:
-- `level_sweep` (default): the trader's levels + aggression, described below.
-- `asia_sweep`: the MFP bot's **Asia range fakeout**. Range 7–8pm NY; fade a sweep of the range that closes
+Pick with `set PX_STRATEGY=...` before `python bot.py` (no setting needed for the Asia sweep):
+- `level_sweep`: the trader's levels + aggression, described below.
+- `asia_sweep` (default): the MFP bot's **Asia range fakeout**. Range 7–8pm NY; fade a sweep of the range that closes
   back inside until 1am; stop beyond the wick (+10% of the range, at least 30 points); target 3.33× the stop,
   capped at $1,500; time exit at 3am. Sized to ≤ $500 at the stop (about 8 MNQ on a 30-point stop).
   **Waits for liquidity** (`ASIA_LIQ_REACH = 0.5`): if an untaken session high/low (NY AM/PM, London,
@@ -87,6 +87,15 @@ Pick with `set PX_STRATEGY=...` before `python bot.py`:
   Two-year backtest (Sep 2024 - Sep 2026): 118 trades, 38% wins, +$20,242 (+$10,722 / +$9,520 by year),
   max drawdown $4,429; 71% of Combines started on a random day pass before hitting the $2,000 MLL
   (expect 55-65% live: small sample). About one trade a week; a Combine takes about 7-8 weeks.
+
+**The desk page** (http://127.0.0.1:8766/) shows the price and aggression, the open trade with live P&L
+and R, today's P&L and losses, Combine progress, tonight's NY bias and Asia range, the gamma levels, the
+biggest resting orders above and below price, and connection health.
+
+**My levels** (`mylevels.py`): type any level on the desk page (from a stream, your chart). The bot
+alerts you (desk and phone) as price comes within 5 points, and scores every test: HELD if price moves
+20 points back away before trading 10 points through, BROKE otherwise. Levels survive restarts
+(`my_levels.json`); every test is logged to `my_levels.jsonl`.
 
 **Gamma levels** (`gamma.py`, `GAMMA_MODE`): every 30 minutes the bot checks the free
 [haus-edge/gex-levels](https://github.com/haus-edge/gex-levels) feed (gamma flip, call wall, put wall,

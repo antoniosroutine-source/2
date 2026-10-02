@@ -9,6 +9,8 @@ import time
 import types
 import unittest
 import urllib.error
+import urllib.request
+import urllib.error
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,6 +28,7 @@ from ui import Desk  # noqa: E402
 
 def params(**over):
     p = types.SimpleNamespace(**{k: getattr(config, k) for k in dir(config) if k.isupper()})
+    p.STRATEGY = "level_sweep"          # these tests exercise the level sweep unless they ask for asia_sweep
     for k, v in over.items():
         setattr(p, k, v)
     return p
@@ -180,6 +183,67 @@ class GammaTests(unittest.TestCase):
         g.refresh(1e9)
         self.assertIsNone(g.snap)
         self.assertEqual(events, ["gamma_error"])
+
+
+class MyLevelsTests(unittest.TestCase):
+    def make(self):
+        from mylevels import MyLevels
+        tmp = tempfile.mkdtemp()
+        p = params(MY_LEVELS_FILE=os.path.join(tmp, "lv.json"), MY_LEVELS_LOG=os.path.join(tmp, "lv.jsonl"),
+                   MY_LEVEL_NEAR_PTS=5.0, MY_LEVEL_HOLD_PTS=20.0, MY_LEVEL_BREAK_PTS=10.0)
+        alerts = []
+        return MyLevels(p, alerts.append, lambda *a, **k: None), alerts, p
+
+    def test_resistance_held_then_broke(self):
+        lv, alerts, p = self.make()
+        lv.update(30850, 30850, 1)
+        lv.add("30,900", "sell wall")
+        lv.update(30890, 30896, 2)                       # 4 pts away: approaching
+        self.assertIn("approaching", alerts[-1])
+        lv.update(30895, 30903, 3)                       # touched, 3 through
+        self.assertIn("price at 30,900.00", alerts[-1])
+        lv.update(30878, 30899, 4)                       # 22 away before 10 through: HELD
+        self.assertIn("HELD", alerts[-1])
+        v = lv.view()[0]
+        self.assertEqual((v["held"], v["broke"], v["side"]), (1, 0, "above"))
+        lv.update(30899, 30900, 5)                       # re-test
+        lv.update(30900, 30912, 6)                       # 12 through: BROKE
+        self.assertIn("BROKE", alerts[-1])
+        v = lv.view()[0]
+        self.assertEqual((v["held"], v["broke"], v["side"]), (1, 1, "below"))   # now support
+        with open(p.MY_LEVELS_LOG) as f:
+            self.assertEqual([json.loads(x)["result"] for x in f], ["HELD", "BROKE"])
+
+    def test_levels_survive_restart_and_remove(self):
+        from mylevels import MyLevels
+        lv, _, p = self.make()
+        lv.update(100, 100, 1)
+        a = lv.add(90, "support")
+        lv2 = MyLevels(p, lambda m: None, lambda *x, **k: None)
+        self.assertEqual(lv2.view()[0]["price"], 90)
+        self.assertTrue(lv2.remove(a["id"]))
+        self.assertEqual(lv2.view(), [])
+
+    def test_desk_endpoints(self):
+        lv, _, _ = self.make()
+        desk = Desk(os.path.join(tempfile.mkdtemp(), "d.jsonl"), lambda *a, **k: None)
+        desk.levels = lv
+        srv = __import__("ui").serve(desk, "127.0.0.1", 0)
+        port = srv.server_address[1]
+        def post(path, body):
+            req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json"})
+            try:
+                return json.loads(urllib.request.urlopen(req, timeout=5).read())
+            except urllib.error.HTTPError as e:
+                return json.loads(e.read())
+        self.assertTrue(post("/levels/add", {"price": "30,900.25", "note": "wall"})["ok"])
+        self.assertIn("error", post("/levels/add", {"price": "abc"}))
+        state = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/state", timeout=5).read())
+        self.assertEqual(state["levels"][0]["price"], 30900.25)
+        page = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode()
+        self.assertIn("My levels", page)
+        srv.shutdown()
 
 
 class ManageTests(unittest.TestCase):
@@ -435,6 +499,9 @@ class BotTests(unittest.TestCase):
         self.patches = [mock.patch.object(config, "LOG_FILE", os.path.join(self.tmp.name, "log.jsonl")),
                         mock.patch.object(config, "STATE_FILE", os.path.join(self.tmp.name, "state.json")),
                         mock.patch.object(config, "GAMMA_MODE", "off"),
+                        mock.patch.object(config, "STRATEGY", "level_sweep"),
+                        mock.patch.object(config, "MY_LEVELS_FILE", os.path.join(self.tmp.name, "lv.json")),
+                        mock.patch.object(config, "MY_LEVELS_LOG", os.path.join(self.tmp.name, "lv.jsonl")),
                         mock.patch("builtins.print")]
         for p in self.patches:
             p.start()

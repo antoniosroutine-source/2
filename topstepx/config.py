@@ -45,7 +45,7 @@ DAY_START = "18:00"               # the futures trading day starts at 6pm ET
 
 # --- Strategy ------------------------------------------------------------------------
 # "level_sweep" (the trader's levels + aggression) or "asia_sweep" (the MFP bot's Asia range fakeout)
-STRATEGY = os.environ.get("PX_STRATEGY", "level_sweep")
+STRATEGY = os.environ.get("PX_STRATEGY", "asia_sweep")
 
 # Asia range sweep (STRATEGY = "asia_sweep")
 ASIA_RANGE_MIN = 60               # range = the first 60 minutes from 7pm NY
@@ -76,6 +76,11 @@ GAMMA_URL = "https://raw.githubusercontent.com/haus-edge/gex-levels/master/data/
 GAMMA_REFRESH_SEC = 1800          # check for a new snapshot every 30 minutes (published around midday ET)
 GAMMA_MAX_AGE_HOURS = 30          # an older snapshot is ignored
 
+# --- My levels (typed in on the desk page) ----------------------------------------------
+MY_LEVEL_NEAR_PTS = 5.0           # alert when price comes this close
+MY_LEVEL_HOLD_PTS = 20.0          # a test HELD if price moves this far back away before...
+MY_LEVEL_BREAK_PTS = 10.0         # ...trading this far through (then it BROKE)
+
 # --- Order book (live only) ----------------------------------------------------------
 DOM_TARGETS = True                # front-run big resting orders between entry and target
 WALL_MIN_SIZE = 100               # a "wall" has at least this many contracts resting at one price...
@@ -102,3 +107,5 @@ STATE_FILE = os.path.join(HERE, "px_state.json")          # daily limits survive
 RECORD_DIR = os.path.join(HERE, "recordings")             # one gzip file of tape + book per day
 DECISIONS_FILE = os.path.join(HERE, "decisions.jsonl")    # every Accept/Reject and "my setup" mark
 GAMMA_DIR = os.path.join(HERE, "gamma")                   # one file per daily gamma snapshot
+MY_LEVELS_FILE = os.path.join(HERE, "my_levels.json")     # your levels (survive restarts)
+MY_LEVELS_LOG = os.path.join(HERE, "my_levels.jsonl")     # every test of every level: HELD or BROKE
