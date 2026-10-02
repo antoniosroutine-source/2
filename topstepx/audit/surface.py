@@ -2,6 +2,7 @@
 import json, math, statistics as S, sys, datetime as dt
 from multiprocessing import Pool
 import engine, strategy
+ORIG_CLOCK = strategy.asia_clock
 from levels import ET, minutes
 STEPS = ["next_open", "stop2", "through", "lookahead", "calendar"]
 BARS = None
@@ -22,6 +23,7 @@ def run(job):
                 s.until -= off; s.exit_min -= off
         cls = Off
     else:
+        strategy.asia_clock = ORIG_CLOCK      # worker processes are reused: undo an earlier job's clock
         cls = engine.Checked
     tr = engine.simulate(BARS, STEPS, p=engine.params(**over), strat_cls=cls)
     R = [t["R"] for t in tr]
@@ -34,7 +36,7 @@ if __name__ == "__main__":
     nclock = len(jobs)
     for rr in [2.0 + 0.25 * i for i in range(11)]: jobs.append((f"target {rr:.2f}x", None, {"ASIA_RR": rr}))
     for bf in (0.0, 0.05, 0.10, 0.15, 0.20, 0.25): jobs.append((f"stop buffer {bf:.0%}", None, {"ASIA_BUF_FRAC": bf}))
-    with Pool(3, initializer=init, initargs=(sys.argv[1],)) as pool:
+    with Pool(3, maxtasksperchild=1, initializer=init, initargs=(sys.argv[1],)) as pool:
         out = pool.map(run, jobs)
     print("| variant | trades | exp R | t | net $ |\n|---|---|---|---|---|")
     for o in out: print(f"| {o[0]} | {o[1]} | {o[2]:+.3f} | {o[3]:.2f} | {o[4]:+,.0f} |")
