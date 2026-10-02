@@ -225,7 +225,8 @@ class AsiaRangeSweep:
        means a trend session, and the session is skipped.
     3. Stop beyond the sweep wick plus ASIA_BUF_FRAC of the range width, at least ASIA_MIN_STOP_PTS
        from entry. Target ASIA_RR x the stop distance, capped at TARGET_CAP_USD.
-    4. One trade per session; no Friday/Saturday evening sessions; flat by ASIA_EXIT_AT (03:00).
+    4. One trade per session; no Friday, Saturday or Sunday evening sessions (Sunday nights lost money
+       in the backtest); flat by ASIA_EXIT_AT (03:00).
     Filters (council review): ASIA_NY_BIAS - trade against that day's NY session (NY dumped -> longs
     only, NY rallied -> shorts only; no NY session, i.e. Sunday -> no trade); the session's first sweep
     decides, so a sweep against the bias ends the session. ASIA_MIN_RANGE_PTS - skip narrow ranges.
@@ -261,7 +262,7 @@ class AsiaRangeSweep:
             self.seen_hi = self.seen_lo = None
             self.liq = [lv["price"] for lv in self.sessions.levels(b.t)[0]]
             self.bias = self._ny_bias(sdate)
-            self.done = sdate.weekday() >= 4      # Friday/Saturday evening: no session
+            self.done = sdate.weekday() >= 4      # Friday, Saturday and Sunday evenings: no session
             self.note = "weekend: no session" if self.done else "building the Asia range"
         if self.done:
             return None
