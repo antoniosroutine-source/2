@@ -19,7 +19,7 @@ import config  # noqa: E402
 from levels import ET, Aggression, SessionTracker, in_window, trading_day  # noqa: E402
 from manage import DayGuard, next_stop  # noqa: E402
 from projectx import PXError, ProjectX  # noqa: E402
-from strategy import Bar, LevelSweep  # noqa: E402
+from strategy import AsiaRangeSweep, Bar, LevelSweep  # noqa: E402
 from stream import MarketStream, Recorder  # noqa: E402
 from ui import Desk  # noqa: E402
 
@@ -109,6 +109,27 @@ class StrategyTests(unittest.TestCase):
         s = LevelSweep(params(), 0.25, 2.0)
         for b in make_bars(SHORT_SETUP, ny(5, 20)):
             self.assertIsNone(s.on_bar(b, -0.5, live=False))
+
+
+class AsiaLiquidityTests(unittest.TestCase):
+    def run_asia(self, reach, sweeps):
+        s = AsiaRangeSweep(params(ASIA_LIQ_REACH=reach), 0.25, 2.0)
+        s.on_bar(Bar(ny(5, 14), 205, 210, 204, 206), 0.0)          # NY PM high 210
+        for i in range(60):                                         # Asia range 195-200
+            s.on_bar(Bar(ny(5, 19, i), 197, 200, 195, 197), 0.0)
+        return [s.on_bar(Bar(ny(5, 20, i), *r), 0.0) for i, r in enumerate(sweeps)]
+
+    def test_fades_the_range_high_without_liquidity_filter(self):
+        out = self.run_asia(0.0, [(199, 202, 198, 199)])
+        self.assertEqual(out[0]["side"], "short")
+        self.assertEqual(out[0]["entry"], 199)
+
+    def test_waits_for_the_pm_high_then_fades_it(self):
+        out = self.run_asia(2.0, [(199, 202, 198, 199), (199, 205, 199, 204), (204, 211, 204, 208)])
+        self.assertIsNone(out[0])                                   # PM high still untaken above
+        self.assertIsNone(out[1])
+        self.assertEqual(out[2]["side"], "short")
+        self.assertEqual(out[2]["entry"], 208)
 
 
 class ManageTests(unittest.TestCase):

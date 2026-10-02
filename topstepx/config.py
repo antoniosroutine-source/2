@@ -54,6 +54,8 @@ ASIA_MIN_STOP_PTS = 30.0          # ...and at least 30 points from entry
 ASIA_MIN_RANGE_PCT = 0.001        # skip sessions whose range is under 0.1% of price
 ASIA_RR = 3.33                    # target = 3.33x the stop distance (capped at TARGET_CAP_USD)
 ASIA_MIN_CONTRACTS = 1            # smaller sizes are allowed: wide stops still risk <= MAX_RISK_USD
+ASIA_LIQ_REACH = 0.0              # >0: if a session high/low (PM high etc.) or a big resting order sits within
+                                  # this many range widths beyond the range, fade the sweep of THAT level, not the range
 ASIA_TRAIL = True                 # breakeven at +$650, then trail keeping 65% from +$785 (False: pure TP/SL)
 
 SWING_K = 2                       # a swing high/low needs this many bars either side (1-minute bars)

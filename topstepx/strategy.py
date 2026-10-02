@@ -237,6 +237,9 @@ class AsiaRangeSweep:
         self.range_bars = 0
         self.done = False
         self.levels, self.bias = [], {}
+        self.liq = []                    # untaken session highs/lows (NY, PM, London, previous day)
+        self.sessions = SessionTracker(p.DAY_START)
+        self.seen_hi = self.seen_lo = None   # session extremes after the range, before this bar
         self.note = "waiting for the Asia session"
         from levels import minutes
         self.until = minutes(p.ASIA_TRADE_UNTIL) - minutes("19:00") + 24 * 60
@@ -245,12 +248,15 @@ class AsiaRangeSweep:
     round_tick = LevelSweep.round_tick
 
     def on_bar(self, b, agg, walls=None, live=True):
+        self.sessions.add(b)
         sdate, mos = asia_clock(b.t)
         if mos >= self.exit_min:
             self.note = "waiting for the next Asia session (7pm NY)"
             return None
         if sdate != self.session:
             self.session, self.high, self.low, self.range_bars = sdate, None, None, 0
+            self.seen_hi = self.seen_lo = None
+            self.liq = [lv["price"] for lv in self.sessions.levels(b.t)[0]]
             self.done = sdate.weekday() >= 4      # Friday/Saturday evening: no session
             self.note = "weekend: no session" if self.done else "building the Asia range"
         if self.done:
@@ -270,22 +276,43 @@ class AsiaRangeSweep:
             self.done, self.note = True, "trade window over"
             return None
         w = self.high - self.low
-        if b.c > self.high + w or b.c < self.low - w:
+        hi, lo = self._fade_levels(w, walls if live else None)
+        self.seen_hi = b.h if self.seen_hi is None else max(self.seen_hi, b.h)
+        self.seen_lo = b.l if self.seen_lo is None else min(self.seen_lo, b.l)
+        if b.c > hi + w or b.c < lo - w:
             self.done, self.note = True, "trend session: standing aside"
             return None
         side = None
-        if b.h > self.high and b.c < self.high:
+        if b.h > hi and b.c < hi:
             side, wick = "short", b.h
-        elif b.l < self.low and b.c > self.low:
+        elif b.l < lo and b.c > lo:
             side, wick = "long", b.l
         if not side:
-            self.note = f"range {self.low:.2f}-{self.high:.2f}: watching for a sweep"
+            extra = (f" (waiting for the liquidity at {hi:.2f})" if hi != self.high else "") + \
+                    (f" (waiting for the liquidity at {lo:.2f})" if lo != self.low else "")
+            self.note = f"range {self.low:.2f}-{self.high:.2f}: watching for a sweep{extra}"
             return None
         self.done = True
         if not live:
             self.note = "a sweep happened before the bot started: skipping the session"
             return None
         return self._signal(side, wick, b, agg)
+
+    def _fade_levels(self, w, walls):
+        """The prices to fade. Normally the range high/low; but if untaken liquidity (a session
+        high/low such as the PM high, or a big resting order) sits just beyond the range, price is
+        drawn to it: wait for that level to be swept instead of fading the range early."""
+        reach = getattr(self.p, "ASIA_LIQ_REACH", 0) * w
+        if reach <= 0:
+            return self.high, self.low
+        hi_taken = max(self.high, self.seen_hi or self.high)
+        lo_taken = min(self.low, self.seen_lo or self.low)
+        above = [x for x in self.liq if hi_taken < x <= self.high + reach]
+        below = [x for x in self.liq if self.low - reach <= x < lo_taken]
+        if walls:
+            above += [x for x in walls("long") if hi_taken < x <= self.high + reach]
+            below += [x for x in walls("short") if self.low - reach <= x < lo_taken]
+        return (min(above) if above else self.high), (max(below) if below else self.low)
 
     def _signal(self, side, wick, b, agg):
         p = self.p
