@@ -628,8 +628,8 @@ class AsiaSweepTests(unittest.TestCase):
 
 
 def _asia_trail_test(self):
-    """With ASIA_TRAIL on (the default), the Asia sweep trade moves to breakeven and trails."""
-    with mock.patch.object(config, "STRATEGY", "asia_sweep"):
+    """With ASIA_TRAIL on, the Asia sweep trade moves to breakeven and trails."""
+    with mock.patch.object(config, "STRATEGY", "asia_sweep"), mock.patch.object(config, "ASIA_TRAIL", True):
         bars = AsiaSweepTests.range_bars(self) + [Bar(ny(5, 20, 15), 30010, 30012, 29990, 30005, v=100)]
         broker = bot.PaperBroker(2.0, 0.74, 0.25)
         b, client = self.make_bot(bars, broker)
