@@ -104,7 +104,15 @@ them on the desk page and saves each day to `gamma/`. Every signal carries `"gam
 `GAMMA_MODE = "log"` (default) only records it; `"filter"` also skips fades aimed away from the flip
 (Apr-Sep 2026 backtest: toward the flip 30 trades, 47% wins, +$10,207; away 7 trades, 0 wins, -$3,367).
 
-Both strategies: one loss ends the day and the day locks at +$1,500. The Asia sweep takes one trade per
+- `ny_open`: the NY-open first 5-minute candle vs the 12 EMA (from a Quant Lab reel). At 9:35 ET: the
+  9:30-9:34 candle closed above the 12 EMA of 5-minute closes -> long, below -> short. Stop beyond the
+  candle (<= $500 risk, max 20 MNQ); the stop then trails the 12 EMA after every completed 5-minute candle;
+  profit capped at $1,500; flat by 3:55pm. Its own windows: entries 9:34-9:40, flat 15:55.
+  Start it with `set PX_STRATEGY=ny_open`. Backtest 2018-2026: 2,193 trades, 31% wins, +0.04R per trade,
+  +$46,503, max drawdown $14,656, Combine pass about 37%; pre-registered verdict NO EDGE
+  (audit/NYOPEN-RESULTS.md). Run it in paper mode (`python bot.py`) or confirm mode (`--live`).
+
+All strategies: one loss ends the day and the day locks at +$1,500. The Asia sweep takes one trade per
 session by design; the level sweep can trade again after a win. (`DAILY_MAX_TRADES = 1` would cap both at one.)
 
 ## The rules (`strategy.py`, `manage.py`, `config.py`)

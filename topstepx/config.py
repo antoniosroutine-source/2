@@ -47,6 +47,11 @@ DAY_START = "18:00"               # the futures trading day starts at 6pm ET
 # "level_sweep" (the trader's levels + aggression) or "asia_sweep" (the MFP bot's Asia range fakeout)
 STRATEGY = os.environ.get("PX_STRATEGY", "asia_sweep")
 
+# NY open: first 5-minute candle vs the 12 EMA (STRATEGY = "ny_open"; audit/NYOPEN-PREREG.md)
+NYO_EMA = 12
+if STRATEGY == "ny_open":                 # its own windows: enter at 9:35, flat by 3:55pm NY
+    ENTRY_START, ENTRY_END, FLAT_BY = "09:34", "09:40", "15:55"
+
 # Asia range sweep (STRATEGY = "asia_sweep")
 ASIA_RANGE_MIN = 60               # range = the first 60 minutes from 7pm NY
 ASIA_TRADE_UNTIL = "01:00"        # no new entries after 1am NY

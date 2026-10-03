@@ -21,7 +21,7 @@ import config  # noqa: E402
 from levels import ET, Aggression, SessionTracker, in_window, trading_day  # noqa: E402
 from manage import DayGuard, next_stop  # noqa: E402
 from projectx import PXError, ProjectX  # noqa: E402
-from strategy import AsiaRangeSweep, Bar, LevelSweep  # noqa: E402
+from strategy import AsiaRangeSweep, Bar, LevelSweep, NYOpenEMA  # noqa: E402
 from stream import MarketStream, Recorder  # noqa: E402
 from ui import Desk  # noqa: E402
 
@@ -244,6 +244,37 @@ class MyLevelsTests(unittest.TestCase):
         page = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode()
         self.assertIn("My levels", page)
         srv.shutdown()
+
+
+class NYOpenTests(unittest.TestCase):
+    def feed(self, first_candle, live=True):
+        s = NYOpenEMA(params(STRATEGY="ny_open", NYO_EMA=12, FLAT_BY="15:55"), 0.25, 2.0)
+        px = 100.0
+        for i in range(90):                                       # 08:00-09:29, flat around 100-109
+            s.on_bar(Bar(ny(5, 8) + 60 * i, px, px + 0.5, px - 0.5, px + 0.1), 0.0, live=live)
+            px += 0.1
+        out = None
+        for i, (o, h, l, c) in enumerate(first_candle):         # 09:30-09:34
+            out = s.on_bar(Bar(ny(5, 9, 30 + i), o, h, l, c), 0.0, live=live) or out
+        return s, out
+
+    def test_close_above_ema_goes_long_with_stop_below_the_candle(self):
+        s, sig = self.feed([(109, 111, 108, 110), (110, 112, 109.5, 111.5), (111.5, 114, 111, 113.5),
+                            (113.5, 116, 113, 115.5), (115.5, 117, 115, 116.5)])
+        self.assertEqual((sig["side"], sig["entry"], sig["stop"], sig["trail"]), ("long", 116.5, 107.75, "ema"))
+        self.assertEqual(sig["size"], min(20, int(500 // ((116.5 - 107.75) * 2 + 0.74))))   # capped at 20 MNQ
+        self.assertEqual(sig["exit_by"], ny(5, 15, 55))
+        self.assertLess(s.trail_stop("long"), sig["entry"])
+
+    def test_close_below_ema_goes_short_and_one_trade_per_day(self):
+        s, sig = self.feed([(109, 109.5, 100, 101), (101, 102, 99, 100), (100, 101, 98, 99), (99, 100, 97, 98), (98, 99, 96, 97)])
+        self.assertEqual((sig["side"], sig["stop"]), ("short", 109.75))
+        self.assertIsNone(s.on_bar(Bar(ny(5, 9, 35), 97, 98, 96, 97.5), 0.0))       # no second signal
+
+    def test_warm_up_never_signals(self):
+        s, sig = self.feed([(109, 111, 108, 110)] * 5, live=False)
+        self.assertIsNone(sig)
+        self.assertIn("before the bot started", s.note)
 
 
 class ManageTests(unittest.TestCase):
@@ -533,6 +564,21 @@ class BotTests(unittest.TestCase):
         # after the short at 84: drop to 50 (the peak), then bounce: the 65% trail exits it
         return bars + [Bar(start + 60 * (16 + i), *r, v=100) for i, r in enumerate(
             [(84, 84.5, 70, 71), (71, 72, 50, 52), (52, 70, 52, 69)])]
+
+    def test_ema_trail_moves_the_stop_only_tighter(self):
+        broker = bot.PaperBroker(2.0, 0.74, 0.25)
+        b, _ = self.make_bot([], broker)
+        now = ny(5, 10)
+        broker.pos = {"side": "long", "size": 5, "entry": 100.0, "stop": 90.0, "target": 200.0, "opened": now - 600}
+        b.trade = {"side": "long", "size": 5, "entry": 100.0, "stop": 90.0, "initial_stop": 90.0, "target": 200.0,
+                   "peak": 100.0, "opened": now - 600, "exit_by": ny(5, 15, 55), "trail": "ema"}
+        b.strategy = types.SimpleNamespace(trail_stop=lambda side: 95.0, note="")
+        self.patches.append(mock.patch.object(config, "FLAT_BY", "15:55")); self.patches[-1].start()
+        b._manage(broker.pos, 104.0, now)
+        self.assertEqual((b.trade["stop"], broker.pos["stop"]), (95.0, 95.0))
+        b.strategy = types.SimpleNamespace(trail_stop=lambda side: 93.0, note="")     # looser: ignored
+        b._manage(broker.pos, 104.0, now + 10)
+        self.assertEqual(b.trade["stop"], 95.0)
 
     def test_paper_trade_opens_trails_and_closes(self):
         bars = self.trail_bars()

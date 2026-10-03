@@ -564,7 +564,7 @@ class Bot:
         self.trade = {"side": pos["side"], "size": pos["size"], "entry": pos["entry"], "stop": stop,
                       "initial_stop": stop, "target": target, "peak": pos["entry"], "opened": now,
                       "exit_by": sig.get("exit_by"),
-                      "trail": sig.get("strategy", "level_sweep") == "level_sweep" or config.ASIA_TRAIL}
+                      "trail": sig.get("trail") or sig.get("strategy", "level_sweep") == "level_sweep" or config.ASIA_TRAIL}
         log("trade_open", **self.trade, risk_usd=sig.get("risk_usd"), reward_usd=sig.get("reward_usd"),
             bias=sig.get("bias"))
         self.desk.event(f"OPEN {pos['side']} {pos['size']} @ {pos['entry']}  stop {stop}  target {target}")
@@ -583,7 +583,7 @@ class Bot:
             return
         if t.get("exit_by") and now >= t["exit_by"]:
             self.broker.flatten(price)
-            log("flatten", reason="time exit (3am NY, London open)")
+            log("flatten", reason="time exit")
             return
         if price:
             t["peak"] = max(t["peak"], price) if d > 0 else min(t["peak"], price)
@@ -594,8 +594,13 @@ class Bot:
                 return
         if not t.get("trail", True):
             return
-        new = next_stop(t["side"], t["entry"], t["stop"], t["peak"], t["size"], config.POINT_VALUE,
-                        config.TICK_SIZE, config)
+        if t.get("trail") == "ema":
+            new = self.strategy.trail_stop(t["side"])
+            if new is None or (new - t["stop"]) * d <= 0:
+                return
+        else:
+            new = next_stop(t["side"], t["entry"], t["stop"], t["peak"], t["size"], config.POINT_VALUE,
+                            config.TICK_SIZE, config)
         if new == t["stop"] or now - self.last_stop_move < 3:
             return
         if price and (price - new) * d <= config.TICK_SIZE:

@@ -15,11 +15,12 @@ On 1-minute bars (New York time):
 7. Target: the new low (just past the push low) or the next liquidity level beyond it, the first
    that pays at least MIN_TARGET_USD, capped at TARGET_CAP_USD; front-runs big resting orders.
 """
+import datetime as dt
 import math
 from collections import deque
 from dataclasses import dataclass
 
-from levels import SessionTracker, bias
+from levels import SessionTracker, bias, et
 
 
 @dataclass
@@ -373,5 +374,94 @@ class AsiaRangeSweep:
                 "range_low": self.low, "done": self.done, "bias": self.bias}
 
 
+class NYOpenEMA:
+    """NY open: the first 5-minute candle (09:30-09:34 NY) vs the 12 EMA of 5-minute closes.
+
+    Close above the EMA -> long, below -> short, at the 09:35 open. Initial stop beyond the candle's far
+    end (1 tick); size so the loss at the stop incl. fees <= MAX_RISK_USD (max MAX_CONTRACTS). After each
+    completed 5-minute candle the stop trails to the EMA (1 tick beyond), never loosening. Profit capped at
+    TARGET_CAP_USD; flat at FLAT_BY (15:55). One trade per day. Pre-registered in audit/NYOPEN-PREREG.md.
+    """
+    id = "ny_open"
+
+    def __init__(self, p, tick_size, point_value):
+        self.p, self.tick, self.pv = p, tick_size, point_value
+        self.alpha = 2 / (p.NYO_EMA + 1)
+        self.k = None                 # current 5-minute bucket (unix // 300)
+        self.cur = None               # [o, h, l, c, bars]
+        self.closed_k = None
+        self.ema = None               # EMA after the last COMPLETED 5-minute candle
+        self.done_day = None
+        self.levels, self.bias = [], {}
+        self.candle = None
+        self.note = "waiting for the 9:30 NY open"
+
+    round_tick = LevelSweep.round_tick
+
+    def on_bar(self, b, agg, walls=None, live=True):
+        k = int(b.t // 300)
+        if k != self.k:
+            if self.cur and self.closed_k != self.k:
+                self._close(self.k, live)          # a bucket whose last minute never printed
+            self.k, self.cur = k, [b.o, b.h, b.l, b.c, 0]
+        else:
+            self.cur[1], self.cur[2], self.cur[3] = max(self.cur[1], b.h), min(self.cur[2], b.l), b.c
+        self.cur[4] += 1
+        if b.t + 60 >= (k + 1) * 300 and self.closed_k != k:
+            return self._close(k, live)
+        return None
+
+    def _close(self, k, live):
+        self.closed_k = k
+        o, h, l, c, n = self.cur
+        self.ema = c if self.ema is None else self.ema + self.alpha * (c - self.ema)
+        t = et(k * 300)
+        if t.weekday() >= 5 or (t.hour, t.minute) != (9, 30):
+            return None
+        d = t.date()
+        if self.done_day == d:
+            return None
+        self.done_day = d
+        self.candle = {"o": o, "h": h, "l": l, "c": c, "ema": round(self.ema, 2)}
+        self.levels = [{"price": h, "label": "first_5m_high"}, {"price": l, "label": "first_5m_low"}]
+        side = "long" if c > self.ema else "short" if c < self.ema else None
+        self.bias = {"why": f"first 5-min candle closed {c:.2f} vs 12 EMA {self.ema:.2f}",
+                     "allow": side or "none"}
+        if n < 4 or not side:
+            self.note = "first candle incomplete or on the EMA: no trade today"
+            return None
+        if not live:
+            self.note = "the 9:30 candle closed before the bot started: no trade today"
+            return None
+        p = self.p
+        dd = 1 if side == "long" else -1
+        stop = self.round_tick(l - self.tick if dd > 0 else h + self.tick)
+        stop_pts = (c - stop) * dd
+        size = min(p.MAX_CONTRACTS, int(p.MAX_RISK_USD // (stop_pts * self.pv + p.FEE_PER_CONTRACT_RT))) if stop_pts > 0 else 0
+        base = {"side": side, "entry": c, "stop": stop, "stop_pts": stop_pts, "agg": 0.0, "bias": self.bias,
+                "ref": self.ema, "strategy": self.id, "trail": "ema"}
+        if size < 1:
+            self.note = f"{side} skipped: {stop_pts:.2f}-pt stop is too wide for ${p.MAX_RISK_USD:.0f}"
+            return {**base, "skip": self.note}
+        target = self.round_tick(c + dd * p.TARGET_CAP_USD / (size * self.pv), up=(dd < 0))
+        flat = dt.datetime.combine(d, dt.time(*map(int, p.FLAT_BY.split(":"))), tzinfo=t.tzinfo).timestamp()
+        self.note = f"{side} signal at {c}"
+        return {**base, "size": size, "target": target, "exit_by": flat,
+                "risk_usd": round(size * (stop_pts * self.pv + p.FEE_PER_CONTRACT_RT), 2),
+                "reward_usd": round((target - c) * dd * size * self.pv, 2)}
+
+    def trail_stop(self, side):
+        """Where the EMA trail puts the stop now (from completed 5-minute candles only)."""
+        if self.ema is None:
+            return None
+        dd = 1 if side == "long" else -1
+        return self.round_tick(self.ema - dd * self.tick, up=(dd < 0))
+
+    def state(self):
+        c = self.candle or {}
+        return {"note": self.note, "bias": self.bias, "range_high": c.get("h"), "range_low": c.get("l"),
+                "ema": None if self.ema is None else round(self.ema, 2)}
+
+
 def make_strategy(p, tick_size, point_value):
-    return {"level_sweep": LevelSweep, "asia_sweep": AsiaRangeSweep}[p.STRATEGY](p, tick_size, point_value)
+    return {"level_sweep": LevelSweep, "asia_sweep": AsiaRangeSweep, "ny_open": NYOpenEMA}[p.STRATEGY](p, tick_size, point_value)
