@@ -39,7 +39,7 @@ if __name__ == "__main__":
     dsr = N01.cdf((sr - sr0) * math.sqrt(n - 1) / math.sqrt(1 - g3 * sr + (g4 - 1) / 4 * sr * sr))
     print(f"K6 one-sided p={p1:.4f}, Bonferroni x{NT} = {min(1, p1*NT):.3f}; Deflated Sharpe (N={NT}) = {dsr:.3f}")
     # K4: random long entries on the same eligible nights (bias long, range >= 33)
-    sys.argv = [sys.argv[0], CSV, CORR, CORR]
+    sys.argv = [sys.argv[0], CSV, CORR, CORR.replace("audit_corrected", "audit_unfiltered")]
     import placebo as P            # builds eligible nights; its own prints are for the full strategy
     el = [x for x in P.el if x["bias"] == 1]
     stops = [t["stop_pts"] for t in real]
