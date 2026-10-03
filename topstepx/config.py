@@ -98,7 +98,7 @@ MAX_ENTRY_DRIFT_PTS = 5.0         # skip an entry if price moved this far from t
 # --- Semi-automatic mode and the alert page ------------------------------------------
 CONFIRM_TIMEOUT_SEC = 30          # a signal waits this long for Accept in confirm mode, then expires
 UI_HOST = "127.0.0.1"             # the alert page: http://127.0.0.1:8766/
-UI_PORT = 8766
+UI_PORT = int(os.environ.get("PX_UI_PORT", "8766"))   # a second copy of the bot can use e.g. 8767
 NTFY_TOPIC = os.environ.get("PX_NTFY_TOPIC")   # optional phone alerts through the free ntfy.sh app
 
 # --- Recording (tape + order book), to build real order-flow data ---------------------
