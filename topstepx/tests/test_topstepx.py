@@ -565,6 +565,30 @@ class BotTests(unittest.TestCase):
         return bars + [Bar(start + 60 * (16 + i), *r, v=100) for i, r in enumerate(
             [(84, 84.5, 70, 71), (71, 72, 50, 52), (52, 70, 52, 69)])]
 
+    def test_ny_open_paper_enters_at_935_and_trails_the_ema(self):
+        for k, v in (("STRATEGY", "ny_open"), ("ENTRY_START", "09:34"), ("ENTRY_END", "09:40"), ("FLAT_BY", "15:55"),
+                     ("MAX_ENTRY_DRIFT_PTS", 15.0)):
+            self.patches.append(mock.patch.object(config, k, v)); self.patches[-1].start()
+        px, bars = 100.0, []
+        for i in range(90):                                   # 08:00-09:29 drifting up
+            bars.append(Bar(ny(5, 8) + 60 * i, px, px + 0.5, px - 0.5, px + 0.1, v=100)); px += 0.1
+        for i in range(5):                                    # the first candle closes well above the EMA
+            bars.append(Bar(ny(5, 9, 30 + i), px, px + 2, px - 1, px + 1.5, v=100)); px += 1.5
+        for i in range(25):                                   # 09:35-09:59 keeps rising
+            bars.append(Bar(ny(5, 9, 35 + i), px, px + 1, px - 0.5, px + 0.8, v=100)); px += 0.8
+        broker = bot.PaperBroker(2.0, 0.74, 0.25)
+        b, client = self.make_bot(bars, broker)
+        self.feed(b, client, bars, upto=95)                  # through the 09:34 bar
+        self.assertIsNotNone(b.trade)
+        self.assertEqual((b.trade["side"], b.trade["trail"]), ("long", "ema"))
+        first_stop = b.trade["stop"]
+        for i in range(96, len(bars) + 1):
+            client.visible = i
+            b.step(bars[i - 1].t + 61)
+        self.assertIsNotNone(b.trade)
+        self.assertGreater(b.trade["stop"], first_stop)       # the stop climbed with the 12 EMA
+        self.assertLess(b.trade["stop"], bars[-1].l)
+
     def test_ema_trail_moves_the_stop_only_tighter(self):
         broker = bot.PaperBroker(2.0, 0.74, 0.25)
         b, _ = self.make_bot([], broker)

@@ -93,7 +93,8 @@ WALL_MULT = 4.0                   # ...and at least 4x the median resting size
 
 # --- Safety -------------------------------------------------------------------------
 MAX_BAR_AGE_SEC = 180             # no new entries if the newest completed bar is older than this
-MAX_ENTRY_DRIFT_PTS = 5.0         # skip an entry if price moved this far from the signal (confirm mode)
+MAX_ENTRY_DRIFT_PTS = 15.0 if STRATEGY == "ny_open" else 5.0   # skip an entry if price moved this far from
+                                  # the signal (the 9:35 NY open moves fast; the Asia session does not)
 
 # --- Semi-automatic mode and the alert page ------------------------------------------
 CONFIRM_TIMEOUT_SEC = 30          # a signal waits this long for Accept in confirm mode, then expires
