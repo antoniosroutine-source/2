@@ -230,6 +230,7 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
 #mgr .pose{display:none}
 #mgr.work .p-work,#mgr.coffee .p-coffee,#mgr.alert .p-alert,#mgr.focus .p-work,#mgr.win .p-win,#mgr.loss .p-loss,#mgr.sleep .p-sleep{display:inline}
 #mgr .face{display:none}
+#mgr .eyes,#mgr .f-sleep[d^="M557"]{visibility:hidden}
 #mgr.work .f-calm,#mgr.coffee .f-calm,#mgr.focus .f-focus,#mgr.alert .f-wow,#mgr.win .f-happy,#mgr.loss .f-sad,#mgr.sleep .f-sleep{display:inline}
 .breathe{animation:breathe 4s ease-in-out infinite;transform-origin:570px 260px}
 @keyframes breathe{50%{transform:translateY(1.5px)}}
@@ -253,6 +254,7 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
 .flash{animation:flash 1s steps(2) infinite}@keyframes flash{50%{opacity:.35}}
 .glow-long{filter:drop-shadow(0 0 10px rgba(60,207,142,.7))}.glow-short{filter:drop-shadow(0 0 10px rgba(255,107,94,.7))}
 .dim{opacity:.55}
+#office:has(#mgr.coffee) #cup{display:none}
 @media (prefers-reduced-motion:reduce){.office *{animation:none!important}}
 </style></head><body><main>
 <header><h1>Bot Desk</h1><span id="mode" class="pill">connecting...</span><span id="clock" class="pill"></span><span id="sess" class="pill"></span>
@@ -262,6 +264,10 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
 <svg viewBox="0 0 900 380" role="img" aria-label="The trading office: the portfolio manager at his desk, reacting to what the bot is doing">
  <defs>
   <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop id="sky1" offset="0" stop-color="#0d1b3a"/><stop id="sky2" offset="1" stop-color="#27406e"/></linearGradient>
+  <pattern id="mono" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#2a1d14"/>
+   <circle cx="3.5" cy="3.5" r="1.6" fill="none" stroke="#c9a24a" stroke-width=".9"/><path d="M10.5,8 l2,2.5 -2,2.5 -2,-2.5 z" fill="#c9a24a"/>
+   <path d="M10.5,1.5 v3 M9,3 h3" stroke="#c9a24a" stroke-width=".8"/><circle cx="3.5" cy="10.5" r=".9" fill="#c9a24a"/></pattern>
+  <linearGradient id="lean" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b06ad9"/><stop offset="1" stop-color="#6b2a99"/></linearGradient>
   <clipPath id="win"><rect x="40" y="40" width="250" height="170" rx="4"/></clipPath>
  </defs>
  <rect width="900" height="380" fill="var(--wall)"/>
@@ -296,13 +302,19 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
  <rect x="515" y="128" width="110" height="150" rx="22" fill="var(--chair)"/>
  <!-- the manager -->
  <g id="mgr" class="work"><g class="breathe">
-  <path d="M520,262 L528,214 Q570,190 612,214 L620,262 Z" fill="var(--suit)"/>
+  <path d="M520,262 L528,214 Q570,190 612,214 L620,262 Z" fill="url(#mono)"/>
+  <path d="M556,206 L548,250 M584,206 L592,250" stroke="#c9a24a" stroke-width="1.5" opacity=".7"/>
   <path d="M556,206 L570,240 L584,206 Z" fill="var(--shirt)"/>
   <path d="M566,212 L574,212 L577,238 L570,248 L563,238 Z" fill="var(--tie)"/>
   <rect x="562" y="186" width="16" height="16" fill="var(--skin)"/>
   <circle cx="570" cy="168" r="25" fill="var(--skin)"/>
   <path d="M545,164 Q546,138 572,140 Q596,141 596,162 Q588,150 572,151 Q556,151 545,164 Z" fill="var(--hair)"/>
   <circle cx="545" cy="170" r="4" fill="var(--skin)"/><circle cx="595" cy="170" r="4" fill="var(--skin)"/>
+  <circle cx="545" cy="176" r="2.6" fill="#dff6ff" stroke="#9fd8ff" stroke-width=".8"/><circle cx="595" cy="176" r="2.6" fill="#dff6ff" stroke="#9fd8ff" stroke-width=".8"/>
+  <path d="M553,204 Q570,236 587,204" fill="none" stroke="#e2b23a" stroke-width="3.2" stroke-dasharray="2.4 1.6"/>
+  <path d="M570,228 l7,9 -7,9 -7,-9 z" fill="#dff6ff" stroke="#e2b23a" stroke-width="1.6"/><path d="M567,233 l3,-2" stroke="#fff" stroke-width="1"/>
+  <g class="shades"><rect x="551" y="161" width="17" height="11" rx="4" fill="#0d0f14"/><rect x="572" y="161" width="17" height="11" rx="4" fill="#0d0f14"/>
+   <path d="M568,165 h4 M551,164 l-6,-2 M589,164 l6,-2" stroke="#c9a24a" stroke-width="2"/><path d="M554,164 l5,-1.5 M575,164 l5,-1.5" stroke="#8fa3c0" stroke-width="1.4"/></g>
   <g class="eyes"><g class="face f-calm f-focus f-wow f-happy f-sad"><circle cx="561" cy="168" r="2.6" fill="#1d2433"/><circle cx="579" cy="168" r="2.6" fill="#1d2433"/></g></g>
   <g class="face f-sleep"><path d="M557,169 q4,3 8,0 M575,169 q4,3 8,0" stroke="#1d2433" stroke-width="2" fill="none"/></g>
   <path class="face f-calm" d="M563,180 q7,4 14,0" stroke="#7a3b2e" stroke-width="2" fill="none" stroke-linecap="round"/>
@@ -312,19 +324,20 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
   <path class="face f-sad" d="M563,184 q7,-5 14,0" stroke="#7a3b2e" stroke-width="2" fill="none" stroke-linecap="round"/>
   <path class="face f-sleep" d="M564,182 h12" stroke="#7a3b2e" stroke-width="2" stroke-linecap="round"/>
   <!-- poses: arms -->
-  <g class="pose p-work"><g class="armL"><path d="M530,220 Q516,246 546,252" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="548" cy="252" r="7" fill="var(--skin)"/></g>
-   <g class="armR"><path d="M610,220 Q624,246 594,252" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="592" cy="252" r="7" fill="var(--skin)"/></g></g>
-  <g class="pose p-coffee"><path d="M530,220 Q516,246 552,254" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="554" cy="254" r="7" fill="var(--skin)"/>
-   <g class="sip"><path d="M610,220 Q630,236 614,220" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M610,222 Q634,238 616,214" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/>
-    <rect x="606" y="200" width="16" height="20" rx="3" fill="#f5f7fa" stroke="#9aa3b2"/><circle cx="614" cy="214" r="7" fill="var(--skin)"/></g></g>
-  <g class="pose p-alert"><path d="M530,220 Q516,246 548,252" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="548" cy="252" r="7" fill="var(--skin)"/>
-   <path d="M610,218 Q650,200 690,190" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="694" cy="189" r="7" fill="var(--skin)"/>
+  <g class="pose p-work"><g class="armL"><path d="M530,220 Q516,246 546,252" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="548" cy="252" r="7" fill="var(--skin)"/></g>
+   <g class="armR"><path d="M610,220 Q624,246 594,252" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="592" cy="252" r="7" fill="var(--skin)"/><rect x="597" y="242" width="7" height="9" rx="2" fill="#e2b23a" stroke="#a87b16"/></g></g>
+  <g class="pose p-coffee"><path d="M530,220 Q516,246 552,254" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="554" cy="254" r="7" fill="var(--skin)"/>
+   <g class="sip"><path d="M610,220 Q630,236 614,220" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M610,222 Q634,238 616,214" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <path d="M603,192 L625,192 L621,222 L607,222 Z" fill="#fbfbfb" stroke="#c7ccd4"/><path d="M604,197 L624,197" stroke="#dfe3e8" stroke-width="2"/>
+    <ellipse cx="614" cy="193" rx="10" ry="2.6" fill="url(#lean)"/><circle cx="614" cy="214" r="7" fill="var(--skin)"/></g></g>
+  <g class="pose p-alert"><path d="M530,220 Q516,246 548,252" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="548" cy="252" r="7" fill="var(--skin)"/>
+   <path d="M610,218 Q650,200 690,190" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="694" cy="189" r="7" fill="var(--skin)"/>
    <g class="bang"><circle cx="570" cy="112" r="15" fill="#e8a400"/><text x="570" y="119" text-anchor="middle" font-size="22" font-weight="700" fill="#fff" font-family="system-ui">!</text></g></g>
-  <g class="pose p-win"><path d="M530,218 Q512,186 520,150" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="520" cy="146" r="8" fill="var(--skin)"/>
-   <path d="M610,218 Q628,186 620,150" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="620" cy="146" r="8" fill="var(--skin)"/></g>
-  <g class="pose p-loss"><path d="M530,220 Q526,190 552,152" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="553" cy="150" r="8" fill="var(--skin)"/>
-   <path d="M610,220 Q614,190 588,152" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="587" cy="150" r="8" fill="var(--skin)"/></g>
-  <g class="pose p-sleep"><path d="M530,220 Q520,246 560,250" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M610,220 Q620,246 580,250" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/>
+  <g class="pose p-win"><path d="M530,218 Q512,186 520,150" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="520" cy="146" r="8" fill="var(--skin)"/>
+   <path d="M610,218 Q628,186 620,150" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="620" cy="146" r="8" fill="var(--skin)"/></g>
+  <g class="pose p-loss"><path d="M530,220 Q526,190 552,152" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="553" cy="150" r="8" fill="var(--skin)"/>
+   <path d="M610,220 Q614,190 588,152" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="587" cy="150" r="8" fill="var(--skin)"/></g>
+  <g class="pose p-sleep"><path d="M530,220 Q520,246 560,250" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M610,220 Q620,246 580,250" stroke="url(#mono)" stroke-width="14" fill="none" stroke-linecap="round"/>
    <g class="zz" font-family="system-ui" font-weight="700" fill="var(--muted)"><text x="600" y="140" font-size="14">z</text><text x="608" y="128" font-size="17">z</text><text x="618" y="114" font-size="21">Z</text></g></g>
  </g></g>
  <!-- desk -->
@@ -332,8 +345,9 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
  <rect x="270" y="271" width="600" height="70" fill="var(--desk2)"/>
  <rect x="510" y="282" width="120" height="26" rx="3" fill="#c9a24a"/><text x="570" y="300" text-anchor="middle" font-size="11" font-weight="700" fill="#3b2a12" font-family="system-ui" letter-spacing="1">PORTFOLIO MGR</text>
  <rect x="532" y="248" width="76" height="8" rx="2" fill="#2c323c"/>
- <g transform="translate(652,236)"><rect width="18" height="20" rx="3" fill="#f5f7fa" stroke="#9aa3b2"/><path d="M18,5 q8,0 8,6 q0,6 -8,6" fill="none" stroke="#9aa3b2" stroke-width="2"/>
-  <path class="steam" d="M5,-4 q-3,-6 0,-12 M12,-4 q-3,-6 0,-12" stroke="#b9c2cf" stroke-width="2" fill="none"/></g>
+ <g transform="translate(262,223)" id="cup"><path d="M0,0 L24,0 L20,32 L4,32 Z" fill="#fbfbfb" stroke="#c7ccd4"/><path d="M1,6 L23,6" stroke="#dfe3e8" stroke-width="2.5"/>
+  <path d="M2,-3 L22,-3 L24,0 L0,0 Z" fill="#f1f3f5" stroke="#c7ccd4"/><ellipse cx="12" cy="-3" rx="10" ry="2.6" fill="url(#lean)"/>
+  <rect x="15" y="-16" width="2.5" height="14" rx="1" fill="#ff4fa3" transform="rotate(14 16 -9)"/></g>
  <!-- monitors -->
  <g id="monL"><rect x="300" y="128" width="190" height="118" rx="6" fill="#1a1f27"/><rect x="306" y="134" width="178" height="104" fill="#0b1220"/>
   <rect x="384" y="246" width="22" height="9" fill="#1a1f27"/>
@@ -418,7 +432,7 @@ function scene(s,offline){const mg=document.getElementById('mgr'),b=document.get
  else if(s.pending&&s.pending.length){const g=s.pending[0].signal;mood='alert';say=`Setup! ${g.side.toUpperCase()} ${g.size} MNQ @ ${fmt(g.entry)}. Stop ${fmt(g.stop)}, target ${fmt(g.target)}.`+(s.pending[0].mode==='confirm'?' Your call: Accept or Reject below.':' Taking it.')}
  else if(t){mood='focus';say=`Managing the ${t.side}: ${t.open_pnl==null?'':money(t.open_pnl)+' open'}${t.open_r==null?'':' ('+(t.open_r>0?'+':'')+fmt(t.open_r)+'R)'}. Stop ${fmt(t.stop)}.`}
  else if(lr&&now-lr.ts<900){if(lr.pnl>0){mood='win';say=`Booked ${money(lr.pnl)} on the ${lr.side}. That is how it is done.`}else{mood='loss';say=`Stopped on the ${lr.side}: ${money(lr.pnl)}. One loss, we are done for the day. Discipline.`}}
- else if(!st.can_enter&&st.session&&(st.session==='Closed'||/outside the entry window/.test(st.why_not||''))){mood='coffee';say=(st.note?st.note+'. ':'')+'Coffee until the session.'}
+ else if(!st.can_enter&&st.session&&(st.session==='Closed'||/outside the entry window/.test(st.why_not||''))){mood='coffee';say=(st.note?st.note+'. ':'')+'Sipping slow until the session.'}
  else if(st.why_not&&/daily stop/.test(st.why_not)){mood='coffee';say='Done for the day: '+st.why_not+'.'}
  mg.setAttribute('class',mood);b.textContent=say;confetti(mood==='win');
  document.getElementById('office').classList.toggle('dim',!!offline);
