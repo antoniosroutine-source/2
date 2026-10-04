@@ -10,7 +10,7 @@ class Delay(engine.Checked):
         early = self.p.ASIA_RANGE_MIN <= mos < self.delay
         was_done = self.done
         r = super().on_bar(b, agg, walls, live)
-        if early and not was_done and self.done and "trend" not in self.note and "narrow" not in self.note \\
+        if early and not was_done and self.done and "trend" not in self.note and "narrow" not in self.note \
                 and "incomplete" not in self.note and "weekend" not in self.note:
             self.done = False          # a sweep inside the waiting time is ignored, not taken
             self.note = "waiting before entries"
