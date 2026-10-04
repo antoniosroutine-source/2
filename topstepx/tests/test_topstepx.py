@@ -29,6 +29,7 @@ from ui import Desk  # noqa: E402
 def params(**over):
     p = types.SimpleNamespace(**{k: getattr(config, k) for k in dir(config) if k.isupper()})
     p.STRATEGY = "level_sweep"          # these tests exercise the level sweep unless they ask for asia_sweep
+    p.ENTRY_START, p.ENTRY_END, p.FLAT_BY, p.MAX_ENTRY_DRIFT_PTS = "19:00", "02:00", "08:25", 5.0   # Asia windows
     for k, v in over.items():
         setattr(p, k, v)
     return p
@@ -531,6 +532,8 @@ class BotTests(unittest.TestCase):
                         mock.patch.object(config, "STATE_FILE", os.path.join(self.tmp.name, "state.json")),
                         mock.patch.object(config, "GAMMA_MODE", "off"),
                         mock.patch.object(config, "STRATEGY", "level_sweep"),
+                        mock.patch.object(config, "ENTRY_START", "19:00"), mock.patch.object(config, "ENTRY_END", "02:00"),
+                        mock.patch.object(config, "FLAT_BY", "08:25"), mock.patch.object(config, "MAX_ENTRY_DRIFT_PTS", 5.0),
                         mock.patch.object(config, "MY_LEVELS_FILE", os.path.join(self.tmp.name, "lv.json")),
                         mock.patch.object(config, "MY_LEVELS_LOG", os.path.join(self.tmp.name, "lv.jsonl")),
                         mock.patch("builtins.print")]
