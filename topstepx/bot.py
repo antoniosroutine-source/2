@@ -255,6 +255,13 @@ class Bot:
         self.gamma = Gamma(config, self._price_at, log) if config.GAMMA_MODE != "off" else None
         self.my_levels = MyLevels(config, self.desk._push, log)
         self.desk.levels = self.my_levels
+        self.desk.bias_file = config.BIAS_FILE
+        if os.path.exists(config.BIAS_FILE):
+            try:
+                with open(config.BIAS_FILE) as f:
+                    self.desk.bias_choice = json.load(f) or {}
+            except (OSError, ValueError):
+                pass
         self.running = True
 
     def _price_at(self, ts):
@@ -322,6 +329,8 @@ class Bot:
     # -- one loop -----------------------------------------------------------------------
     def step(self, now):
         new_signal = None
+        td = str(trading_day(now, config.DAY_START))
+        self.strategy.override = self.desk.bias_for(td)
         for b in self.new_bars(now):
             self.bar_agg.add_bar(b)
             agg, source = self.aggression(b.t + 60)
@@ -447,6 +456,28 @@ class Bot:
         can, why = self.guard.can_enter(now)
         st = self.strategy.state() if hasattr(self.strategy, "state") else {}
         g = self.gamma.levels() if self.gamma else {}
+        bias = st.get("bias") or {}
+        votes = []
+        if bias.get("why"):
+            votes.append({"source": "NY session", "side": bias.get("allow") if bias.get("allow") in ("long", "short") else None,
+                          "why": bias["why"] + " (NY down -> Asia recovers)"})
+        if g.get("flip") and price:
+            toward = "short" if price > g["flip"] else "long"
+            votes.append({"source": "Gamma", "side": toward,
+                          "why": f"{(g.get('regime') or '').replace('_', ' ')}; price {'above' if price > g['flip'] else 'below'} the flip "
+                                 f"{g['flip']:,.2f}: fades toward the flip won 47% (Apr-Sep 2026)"})
+        if abs(agg) >= config.AGG_MIN_RATIO:
+            votes.append({"source": "Tape aggression", "side": "long" if agg > 0 else "short",
+                          "why": f"{agg:+.2f} over 15 min ({'buyers' if agg > 0 else 'sellers'} in control)"})
+        if bias.get("ny_close") and price:
+            votes.append({"source": "Price vs NY close", "side": "long" if price > bias["ny_close"] else "short",
+                          "why": f"{price:,.2f} vs {bias['ny_close']:,.2f} (above = buyers held the gains)"})
+        td = str(trading_day(now, config.DAY_START))
+        override = self.desk.bias_for(td)
+        allow_now = override or bias.get("allow") or "both"
+        self.desk.update(trading_day=td, votes=votes, bias_override=override,
+                         allow_now={"long": "longs only", "short": "shorts only", "both": "longs and shorts",
+                                    "none": "no trade"}.get(allow_now, allow_now))
         self.desk.update(
             mode={"paper": "PAPER", "confirm": "LIVE (confirm)", "auto": "LIVE (auto)"}[self.mode],
             strategy=config.STRATEGY, contract=self.contract.get("name"),

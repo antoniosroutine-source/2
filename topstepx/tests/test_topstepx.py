@@ -535,6 +535,7 @@ class BotTests(unittest.TestCase):
                         mock.patch.object(config, "ENTRY_START", "19:00"), mock.patch.object(config, "ENTRY_END", "02:00"),
                         mock.patch.object(config, "FLAT_BY", "08:25"), mock.patch.object(config, "MAX_ENTRY_DRIFT_PTS", 5.0),
                         mock.patch.object(config, "MY_LEVELS_FILE", os.path.join(self.tmp.name, "lv.json")),
+                        mock.patch.object(config, "BIAS_FILE", os.path.join(self.tmp.name, "bias.json")),
                         mock.patch.object(config, "MY_LEVELS_LOG", os.path.join(self.tmp.name, "lv.jsonl")),
                         mock.patch("builtins.print")]
         for p in self.patches:
@@ -877,6 +878,27 @@ class AsiaSweepTests(unittest.TestCase):
         for b in fri + sun + [Bar(ny(4, 20, 15), 30010, 30012, 29990, 30005, v=100)]:
             sig2 = s2.on_bar(b, 0.0) or sig2
         self.assertIsNone(sig2)                                       # switched off: Sunday skipped
+
+    def test_trader_bias_override_wins(self):
+        short_sweep = [Bar(ny(5, 20, 15), 30050, 30070, 30048, 30050, v=100)]
+        s = AsiaRangeSweep(params(STRATEGY="asia_sweep"), 0.25, 2.0)
+        s.override = "short"                                     # NY dumped (longs), but the trader says shorts
+        sig = None
+        for b in self.range_bars() + short_sweep:
+            sig = s.on_bar(b, 0.0) or sig
+        self.assertEqual(sig["side"], "short")
+        self.assertNotIn("skip", sig)
+
+    def test_desk_bias_choice_is_per_trading_day(self):
+        d = Desk(os.path.join(tempfile.mkdtemp(), "d.jsonl"), lambda *a, **k: None)
+        d.bias_file = os.path.join(tempfile.mkdtemp(), "b.json")
+        d.set_bias("long", "2026-10-05")
+        self.assertEqual(d.bias_for("2026-10-05"), "long")
+        self.assertIsNone(d.bias_for("2026-10-06"))              # a new trading day goes back to auto
+        with open(d.bias_file) as f:
+            self.assertEqual(json.load(f), {"allow": "long", "day": "2026-10-05"})
+        d.set_bias("auto", "2026-10-05")
+        self.assertIsNone(d.bias_for("2026-10-05"))
 
     def test_no_late_entries_and_warm_up(self):
         _, sig = self.feed_session([Bar(ny(6, 1, 5), 30010, 30012, 29990, 30005, v=100)])

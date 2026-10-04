@@ -117,3 +117,4 @@ DECISIONS_FILE = os.path.join(HERE, "decisions.jsonl")    # every Accept/Reject 
 GAMMA_DIR = os.path.join(HERE, "gamma")                   # one file per daily gamma snapshot
 MY_LEVELS_FILE = os.path.join(HERE, "my_levels.json")     # your levels (survive restarts)
 MY_LEVELS_LOG = os.path.join(HERE, "my_levels.jsonl")     # every test of every level: HELD or BROKE
+BIAS_FILE = os.path.join(HERE, "bias_override.json")      # your bias choice on the desk page (one trading day)

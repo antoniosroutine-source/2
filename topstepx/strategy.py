@@ -308,10 +308,11 @@ class AsiaRangeSweep:
         if not live:
             self.note = "a sweep happened before the bot started: skipping the session"
             return None
-        allow = self.bias.get("allow", "both")
+        allow = getattr(self, "override", None) or self.bias.get("allow", "both")
         if allow != "both" and allow != side:
             only = "no trade" if allow == "none" else f"{allow}s only"
-            self.note = f"{side} sweep skipped: {self.bias.get('why')} ({only}); done for the session"
+            why = "your bias setting" if getattr(self, "override", None) else self.bias.get("why")
+            self.note = f"{side} sweep skipped: {why} ({only}); done for the session"
             return {"side": side, "entry": b.c, "bias": self.bias, "strategy": self.id, "skip": self.note}
         return self._signal(side, wick, b, agg)
 

@@ -24,6 +24,8 @@ class Desk:
         self.status = {}
         self.events = deque(maxlen=40)
         self.levels = None         # MyLevels, attached by the bot
+        self.bias_file = None      # set by the bot: where the trader's bias choice is saved
+        self.bias_choice = {}      # {"allow": "long"|"short"|"both", "day": "YYYY-MM-DD"}
 
     # -- called by the bot ---------------------------------------------------------
     def ask(self, signal, mode, timeout, snapshot):
@@ -77,6 +79,22 @@ class Desk:
         self._write({"kind": "answer", "id": sid, "answer": "accept" if accept else "reject"})
         self.event(f"signal {sid}: {'accepted' if accept else 'rejected'}")
         return True
+
+    def set_bias(self, allow, day):
+        """The trader's bias for one trading day: "long", "short", "both", or "auto" (the bot's rule)."""
+        with self.lock:
+            self.bias_choice = {} if allow == "auto" else {"allow": allow, "day": day}
+            if self.bias_file:
+                with open(self.bias_file, "w") as f:
+                    json.dump(self.bias_choice, f)
+        self._write({"kind": "bias", "allow": allow, "day": day})
+        self.event("bias set by you: " + ({"long": "longs only", "short": "shorts only", "both": "longs and shorts",
+                                            "auto": "auto (bot rules)"}[allow]))
+
+    def bias_for(self, day):
+        with self.lock:
+            c = self.bias_choice
+            return c.get("allow") if c.get("day") == day else None
 
     def mark(self, side, note):
         with self.lock:
@@ -153,6 +171,9 @@ def serve(desk, host, port):
                 return self._send(200, {"ok": True})
             if self.path == "/levels/remove" and desk.levels:
                 return self._send(200, {"ok": desk.levels.remove(int(body.get("id", 0)))})
+            if self.path == "/bias" and body.get("allow") in ("auto", "long", "short", "both"):
+                desk.set_bias(body["allow"], desk.status.get("trading_day"))
+                return self._send(200, {"ok": True})
             if self.path == "/mark" and body.get("side") in ("long", "short"):
                 desk.mark(body["side"], str(body.get("note", ""))[:300])
                 return self._send(200, {"ok": True})
@@ -339,6 +360,7 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
  <div class="card"><h2>Position</h2><div id="trade"></div></div>
  <div class="card"><h2>Today</h2><div class="grid" id="today"></div><div id="combine" style="margin-top:12px"></div></div>
  <div class="card"><h2>Setup</h2><div class="grid" id="plan"></div></div>
+ <div class="card"><h2>Bias for today</h2><div class="row" id="biasbtns" style="margin-bottom:10px"></div><div id="votes"></div></div>
  <div class="card"><h2>Gamma levels</h2><div id="gamma"></div></div>
  <div class="card"><h2>Order book walls</h2><div class="scroll"><table id="walls"></table></div><p class="k" style="margin:8px 0 0">Resting orders of 100+ contracts and 4x the typical size, nearest first.</p></div>
 </div>
@@ -366,6 +388,12 @@ async function decide(id,a){await post('/decide',{id,accept:a});tick()}
 async function mark(side){const n=document.getElementById('mnote');await post('/mark',{side,note:n.value});n.value='';tick()}
 async function addLevel(e){e.preventDefault();const p=document.getElementById('lprice'),n=document.getElementById('lnote'),er=document.getElementById('lerr');
 const r=await post('/levels/add',{price:p.value,note:n.value});er.textContent=r.error||'';if(r.ok){p.value='';n.value=''}tick()}
+async function setBias(a){await post('/bias',{allow:a});tick()}
+function biasPanel(st){const cur=st.bias_override||'auto',lab={auto:'Auto (bot rules)',long:'Longs only',short:'Shorts only',both:'Both'};
+ set('biasbtns',['auto','long','short','both'].map(a=>`<button onclick="setBias('${a}')" class="${a===cur?(a==='long'?'yes':a==='short'?'no':'paper'):''}" style="${a===cur&&a!=='long'&&a!=='short'?'background:var(--accent);color:#fff;border-color:var(--accent)':''}">${lab[a]}</button>`).join(''));
+ const v=st.votes||[];const n={long:0,short:0};v.forEach(x=>{if(x.side in n)n[x.side]++});
+ set('votes',(v.length?`<table>${v.map(x=>`<tr><td>${esc(x.source)}</td><td class="${x.side==='long'?'pos':x.side==='short'?'neg':'muted'}"><b>${x.side?esc(x.side.toUpperCase()):'-'}</b></td><td class="k">${esc(x.why)}</td></tr>`).join('')}</table>`:'')
+ +`<p class="k" style="margin:8px 0 0">Sources: ${n.long} long · ${n.short} short. The bot is trading: <b>${esc(st.allow_now||'-')}</b>${cur==='auto'?' (its own rule)':' (your setting)'}.</p>`)}
 async function delLevel(id){await post('/levels/remove',{id});tick()}
 function stat(k,v,c=''){return `<div><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`}
 function set(id,h){document.getElementById(id).innerHTML=h}
@@ -431,7 +459,7 @@ set('gamma',g.flip?`<div class="grid">${stat('Regime',esc((g.regime||'').replace
 <p class="k" style="margin:8px 0 0">${st.price?(st.price>g.flip?'Price above the flip: a short fades toward it.':'Price below the flip: a long fades toward it.'):''} Snapshot ${esc((g.computed||'').slice(0,16).replace('T',' '))} UTC.</p>`:'<p class="muted" style="margin:0">No gamma snapshot yet (updates around midday ET).</p>');
 const w=st.walls||{above:[],below:[]};const wr=(arr,cls)=>arr.map(x=>`<tr><td class="${cls}">${fmt(x[0])}</td><td class="num">${fmt(x[1],0)} contracts</td><td class="num k">${st.price?((x[0]-st.price>0?'+':'')+fmt(x[0]-st.price)+' pts'):''}</td></tr>`).join('');
 set('walls',(w.above.length||w.below.length)?`<tr class="k"><td colspan="3">Above (sell walls)</td></tr>${wr([...w.above].reverse(),'short')||'<tr><td class="muted" colspan="3">none</td></tr>'}<tr class="k"><td colspan="3">Below (buy walls)</td></tr>${wr(w.below,'long')||'<tr><td class="muted" colspan="3">none</td></tr>'}`:'<tr><td class="muted">No big resting orders right now (or the order book stream is down).</td></tr>');
-set('levels',levelRows(s.levels||[],st.price));
+set('levels',levelRows(s.levels||[],st.price));biasPanel(st);
 set('signals',s.pending.map(p=>{const g=p.signal,q=p.mode==='confirm';if(!seen.has(p.id)){seen.add(p.id);beep()}
 return `<div class="card sig"><h3 class="${g.side}">${g.side.toUpperCase()} ${g.size} MNQ @ ${fmt(g.entry)}</h3>
 <div class="grid">${stat('Stop',fmt(g.stop))}${stat('Target',fmt(g.target))}${stat('Risk',money(g.risk_usd))}${stat('Reward',money(g.reward_usd))}${stat('Gamma',g.gamma?(g.gamma.toward_flip?'toward flip':'away from flip'):'-',g.gamma?(g.gamma.toward_flip?'pos':'neg'):'')}${stat('Time left',p.left+'s')}</div>
