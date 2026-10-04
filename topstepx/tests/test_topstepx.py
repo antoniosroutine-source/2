@@ -862,6 +862,22 @@ class AsiaSweepTests(unittest.TestCase):
         self.assertEqual(s.bias["allow"], "none")
         self.assertIn("skip", sig)
 
+    def test_sunday_uses_fridays_ny_session(self):
+        p = params(STRATEGY="asia_sweep", ASIA_SUNDAY=True)
+        s = AsiaRangeSweep(p, 0.25, 2.0)
+        fri = [Bar(ny(2, 9, 30), 30300, 30305, 30290, 30295, v=100), Bar(ny(2, 15, 59), 30245, 30250, 30235, 30240, v=100)]
+        sun = [Bar(ny(4, 19, m), 30030, 30060 if m == 10 else 30040, 30000 if m == 20 else 30020, 30030, v=100) for m in range(60)]
+        sig = None
+        for b in fri + sun + [Bar(ny(4, 20, 15), 30010, 30012, 29990, 30005, v=100)]:
+            sig = s.on_bar(b, 0.0) or sig
+        self.assertEqual(sig["side"], "long")                         # Friday's NY dumped -> Sunday longs
+        self.assertIn("last NY session", s.bias["why"])
+        s2 = AsiaRangeSweep(params(STRATEGY="asia_sweep", ASIA_SUNDAY=False), 0.25, 2.0)
+        sig2 = None
+        for b in fri + sun + [Bar(ny(4, 20, 15), 30010, 30012, 29990, 30005, v=100)]:
+            sig2 = s2.on_bar(b, 0.0) or sig2
+        self.assertIsNone(sig2)                                       # switched off: Sunday skipped
+
     def test_no_late_entries_and_warm_up(self):
         _, sig = self.feed_session([Bar(ny(6, 1, 5), 30010, 30012, 29990, 30005, v=100)])
         self.assertIsNone(sig)                                  # 1:05am: after the entry window

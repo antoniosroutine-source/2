@@ -194,9 +194,143 @@ table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}td{p
 tr:first-child td{border-top:0}.num{text-align:right}
 ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}li span{color:var(--muted);margin-right:8px}
 .scroll{overflow-x:auto}
+
+/* ---- the office scene ---- */
+:root{--wall:#d9e2ec;--wall2:#c9d4e0;--floor:#a88f72;--desk:#5c3f2b;--desk2:#4a3122;--suit:#1f2a44;--skin:#e9b991;--hair:#2b2118;--shirt:#f5f7fa;--tie:#b4232c;--chair:#262b33;--frame:#3a4350}
+@media (prefers-color-scheme:dark){:root{--wall:#1c2533;--wall2:#162030;--floor:#3b3025;--desk:#4a3324;--desk2:#38261a;--chair:#11151b;--frame:#566070}}
+.office{padding:0;overflow:hidden;position:relative;margin-bottom:12px}
+.office svg{display:block;width:100%;height:auto;max-height:420px;background:var(--wall)}
+.office .scr{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.bubble{position:absolute;left:50%;top:10px;transform:translateX(-10%);max-width:min(46%,380px);background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:8px 12px;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.bubble:after{content:"";position:absolute;left:18px;bottom:-8px;border:8px solid transparent;border-top-color:var(--card);border-bottom:0}
+.ticker{background:#0b1220;color:#cfe3ff;font:13px ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;padding:6px 0;border-top:1px solid #1f2b40}
+.ticker span{display:inline-block;padding-left:100%;animation:tick 28s linear infinite}
+@keyframes tick{to{transform:translateX(-100%)}}
+#mgr .pose{display:none}
+#mgr.work .p-work,#mgr.coffee .p-coffee,#mgr.alert .p-alert,#mgr.focus .p-work,#mgr.win .p-win,#mgr.loss .p-loss,#mgr.sleep .p-sleep{display:inline}
+#mgr .face{display:none}
+#mgr.work .f-calm,#mgr.coffee .f-calm,#mgr.focus .f-focus,#mgr.alert .f-wow,#mgr.win .f-happy,#mgr.loss .f-sad,#mgr.sleep .f-sleep{display:inline}
+.breathe{animation:breathe 4s ease-in-out infinite;transform-origin:570px 260px}
+@keyframes breathe{50%{transform:translateY(1.5px)}}
+#mgr.work .armL{animation:typeL .35s ease-in-out infinite alternate}
+#mgr.work .armR{animation:typeR .35s ease-in-out infinite alternate .17s}
+#mgr.focus .armL{animation:typeL .9s ease-in-out infinite alternate}
+#mgr.focus .armR{animation:typeR .9s ease-in-out infinite alternate .45s}
+@keyframes typeL{to{transform:translateY(-3px)}}@keyframes typeR{to{transform:translateY(-3px)}}
+.eyes{animation:blink 5s infinite;transform-origin:570px 168px}
+@keyframes blink{0%,94%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+#mgr.coffee .sip{animation:sip 6s ease-in-out infinite;transform-origin:612px 214px}
+@keyframes sip{0%,60%,100%{transform:rotate(0)}70%,85%{transform:rotate(-38deg) translate(-6px,-14px)}}
+#mgr.alert .bang{animation:pop .6s ease-in-out infinite alternate}
+@keyframes pop{to{transform:translateY(-6px)}}
+#mgr.win .p-win{animation:cheer .5s ease-in-out infinite alternate;transform-origin:570px 210px}
+@keyframes cheer{to{transform:translateY(-4px)}}
+.zz text{animation:zz 3s ease-in infinite;opacity:0}.zz text:nth-child(2){animation-delay:1s}.zz text:nth-child(3){animation-delay:2s}
+@keyframes zz{0%{opacity:0;transform:translate(0,0)}30%{opacity:1}100%{opacity:0;transform:translate(18px,-30px)}}
+.confetti rect{animation:fall 2.4s linear infinite}
+@keyframes fall{from{transform:translateY(-40px) rotate(0)}to{transform:translateY(360px) rotate(540deg)}}
+.flash{animation:flash 1s steps(2) infinite}@keyframes flash{50%{opacity:.35}}
+.glow-long{filter:drop-shadow(0 0 10px rgba(60,207,142,.7))}.glow-short{filter:drop-shadow(0 0 10px rgba(255,107,94,.7))}
+.dim{opacity:.55}
+@media (prefers-reduced-motion:reduce){.office *{animation:none!important}}
 </style></head><body><main>
 <header><h1>Bot Desk</h1><span id="mode" class="pill">connecting...</span><span id="clock" class="pill"></span><span id="sess" class="pill"></span>
 <span id="health" class="pill"></span><span id="strat" class="pill"></span></header>
+<div class="card office" id="office">
+<div class="bubble" id="bubble">Morning. Pulling up the book...</div>
+<svg viewBox="0 0 900 380" role="img" aria-label="The trading office: the portfolio manager at his desk, reacting to what the bot is doing">
+ <defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop id="sky1" offset="0" stop-color="#0d1b3a"/><stop id="sky2" offset="1" stop-color="#27406e"/></linearGradient>
+  <clipPath id="win"><rect x="40" y="40" width="250" height="170" rx="4"/></clipPath>
+ </defs>
+ <rect width="900" height="380" fill="var(--wall)"/>
+ <rect y="300" width="900" height="80" fill="var(--floor)"/>
+ <rect y="296" width="900" height="6" fill="var(--wall2)"/>
+ <!-- window with skyline -->
+ <g clip-path="url(#win)">
+  <rect x="40" y="40" width="250" height="170" fill="url(#sky)"/>
+  <circle id="sun" cx="240" cy="78" r="16" fill="#ffd36b"/>
+  <circle id="moon" cx="240" cy="74" r="12" fill="#f3f1e6"/>
+  <g fill="#0f1a2c" id="skyline">
+   <rect x="40" y="140" width="34" height="70"/><rect x="78" y="112" width="26" height="98"/><rect x="108" y="128" width="40" height="82"/>
+   <rect x="152" y="96" width="22" height="114"/><polygon points="152,96 163,74 174,96"/><rect x="178" y="134" width="36" height="76"/>
+   <rect x="218" y="118" width="28" height="92"/><rect x="250" y="146" width="40" height="64"/>
+  </g>
+  <g id="lights" fill="#ffd977">
+   <rect x="84" y="124" width="4" height="5"/><rect x="94" y="140" width="4" height="5"/><rect x="116" y="140" width="4" height="5"/><rect x="132" y="156" width="4" height="5"/>
+   <rect x="158" y="110" width="4" height="5"/><rect x="158" y="134" width="4" height="5"/><rect x="186" y="148" width="4" height="5"/><rect x="224" y="130" width="4" height="5"/>
+   <rect x="234" y="160" width="4" height="5"/><rect x="258" y="160" width="4" height="5"/><rect x="48" y="156" width="4" height="5"/><rect x="200" y="170" width="4" height="5"/>
+  </g>
+ </g>
+ <rect x="40" y="40" width="250" height="170" rx="4" fill="none" stroke="var(--frame)" stroke-width="8"/>
+ <line x1="165" y1="40" x2="165" y2="210" stroke="var(--frame)" stroke-width="5"/>
+ <!-- wall clock (New York time) -->
+ <g transform="translate(800,78)"><circle r="30" fill="#fff" stroke="var(--frame)" stroke-width="5"/>
+  <line id="hHand" y2="-15" stroke="#1d2433" stroke-width="4" stroke-linecap="round"/><line id="mHand" y2="-23" stroke="#1d2433" stroke-width="3" stroke-linecap="round"/><circle r="3" fill="#b4232c"/>
+  <text y="48" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="system-ui">NEW YORK</text></g>
+ <!-- framed chart on the wall -->
+ <g transform="translate(640,40)"><rect width="110" height="76" fill="#fff" stroke="var(--frame)" stroke-width="5"/>
+  <polyline points="10,62 30,50 45,56 62,34 78,40 98,16" fill="none" stroke="#13804e" stroke-width="3"/></g>
+ <!-- chair -->
+ <rect x="515" y="128" width="110" height="150" rx="22" fill="var(--chair)"/>
+ <!-- the manager -->
+ <g id="mgr" class="work"><g class="breathe">
+  <path d="M520,262 L528,214 Q570,190 612,214 L620,262 Z" fill="var(--suit)"/>
+  <path d="M556,206 L570,240 L584,206 Z" fill="var(--shirt)"/>
+  <path d="M566,212 L574,212 L577,238 L570,248 L563,238 Z" fill="var(--tie)"/>
+  <rect x="562" y="186" width="16" height="16" fill="var(--skin)"/>
+  <circle cx="570" cy="168" r="25" fill="var(--skin)"/>
+  <path d="M545,164 Q546,138 572,140 Q596,141 596,162 Q588,150 572,151 Q556,151 545,164 Z" fill="var(--hair)"/>
+  <circle cx="545" cy="170" r="4" fill="var(--skin)"/><circle cx="595" cy="170" r="4" fill="var(--skin)"/>
+  <g class="eyes"><g class="face f-calm f-focus f-wow f-happy f-sad"><circle cx="561" cy="168" r="2.6" fill="#1d2433"/><circle cx="579" cy="168" r="2.6" fill="#1d2433"/></g></g>
+  <g class="face f-sleep"><path d="M557,169 q4,3 8,0 M575,169 q4,3 8,0" stroke="#1d2433" stroke-width="2" fill="none"/></g>
+  <path class="face f-calm" d="M563,180 q7,4 14,0" stroke="#7a3b2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path class="face f-focus" d="M563,181 h14" stroke="#7a3b2e" stroke-width="2" stroke-linecap="round"/>
+  <path class="face f-happy" d="M560,178 q10,10 20,0 z" fill="#7a3b2e"/>
+  <ellipse class="face f-wow" cx="570" cy="182" rx="4" ry="5" fill="#7a3b2e"/>
+  <path class="face f-sad" d="M563,184 q7,-5 14,0" stroke="#7a3b2e" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path class="face f-sleep" d="M564,182 h12" stroke="#7a3b2e" stroke-width="2" stroke-linecap="round"/>
+  <!-- poses: arms -->
+  <g class="pose p-work"><g class="armL"><path d="M530,220 Q516,246 546,252" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="548" cy="252" r="7" fill="var(--skin)"/></g>
+   <g class="armR"><path d="M610,220 Q624,246 594,252" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="592" cy="252" r="7" fill="var(--skin)"/></g></g>
+  <g class="pose p-coffee"><path d="M530,220 Q516,246 552,254" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="554" cy="254" r="7" fill="var(--skin)"/>
+   <g class="sip"><path d="M610,220 Q630,236 614,220" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M610,222 Q634,238 616,214" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <rect x="606" y="200" width="16" height="20" rx="3" fill="#f5f7fa" stroke="#9aa3b2"/><circle cx="614" cy="214" r="7" fill="var(--skin)"/></g></g>
+  <g class="pose p-alert"><path d="M530,220 Q516,246 548,252" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="548" cy="252" r="7" fill="var(--skin)"/>
+   <path d="M610,218 Q650,200 690,190" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="694" cy="189" r="7" fill="var(--skin)"/>
+   <g class="bang"><circle cx="570" cy="112" r="15" fill="#e8a400"/><text x="570" y="119" text-anchor="middle" font-size="22" font-weight="700" fill="#fff" font-family="system-ui">!</text></g></g>
+  <g class="pose p-win"><path d="M530,218 Q512,186 520,150" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="520" cy="146" r="8" fill="var(--skin)"/>
+   <path d="M610,218 Q628,186 620,150" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="620" cy="146" r="8" fill="var(--skin)"/></g>
+  <g class="pose p-loss"><path d="M530,220 Q526,190 552,152" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="553" cy="150" r="8" fill="var(--skin)"/>
+   <path d="M610,220 Q614,190 588,152" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><circle cx="587" cy="150" r="8" fill="var(--skin)"/></g>
+  <g class="pose p-sleep"><path d="M530,220 Q520,246 560,250" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/><path d="M610,220 Q620,246 580,250" stroke="var(--suit)" stroke-width="14" fill="none" stroke-linecap="round"/>
+   <g class="zz" font-family="system-ui" font-weight="700" fill="var(--muted)"><text x="600" y="140" font-size="14">z</text><text x="608" y="128" font-size="17">z</text><text x="618" y="114" font-size="21">Z</text></g></g>
+ </g></g>
+ <!-- desk -->
+ <rect x="250" y="255" width="640" height="16" rx="3" fill="var(--desk)"/>
+ <rect x="270" y="271" width="600" height="70" fill="var(--desk2)"/>
+ <rect x="510" y="282" width="120" height="26" rx="3" fill="#c9a24a"/><text x="570" y="300" text-anchor="middle" font-size="11" font-weight="700" fill="#3b2a12" font-family="system-ui" letter-spacing="1">PORTFOLIO MGR</text>
+ <rect x="532" y="248" width="76" height="8" rx="2" fill="#2c323c"/>
+ <g transform="translate(652,236)"><rect width="18" height="20" rx="3" fill="#f5f7fa" stroke="#9aa3b2"/><path d="M18,5 q8,0 8,6 q0,6 -8,6" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+  <path class="steam" d="M5,-4 q-3,-6 0,-12 M12,-4 q-3,-6 0,-12" stroke="#b9c2cf" stroke-width="2" fill="none"/></g>
+ <!-- monitors -->
+ <g id="monL"><rect x="300" y="128" width="190" height="118" rx="6" fill="#1a1f27"/><rect x="306" y="134" width="178" height="104" fill="#0b1220"/>
+  <rect x="384" y="246" width="22" height="9" fill="#1a1f27"/>
+  <text x="314" y="152" class="scr" font-size="11" fill="#6c9bff">MNQ</text><text id="mPrice" x="476" y="152" text-anchor="end" class="scr" font-size="14" font-weight="700" fill="#e8eef8">-</text>
+  <polyline id="spark" points="" fill="none" stroke="#3ccf8e" stroke-width="2"/>
+  <text id="mAgg" x="314" y="232" class="scr" font-size="10" fill="#98a1b2">aggression -</text></g>
+ <g id="monR"><rect x="650" y="128" width="190" height="118" rx="6" fill="#1a1f27"/><rect x="656" y="134" width="178" height="104" fill="#0b1220"/>
+  <rect x="734" y="246" width="22" height="9" fill="#1a1f27"/>
+  <text x="664" y="152" class="scr" font-size="11" fill="#6c9bff" id="rTitle">POSITION</text>
+  <text id="rMain" x="745" y="186" text-anchor="middle" class="scr" font-size="20" font-weight="700" fill="#e8eef8">FLAT</text>
+  <text id="rSub" x="745" y="208" text-anchor="middle" class="scr" font-size="12" fill="#98a1b2">-</text>
+  <text id="rDay" x="745" y="230" text-anchor="middle" class="scr" font-size="11" fill="#98a1b2">day -</text></g>
+ <g class="confetti" id="confetti"></g>
+ <!-- plant -->
+ <g transform="translate(70,300)"><rect x="-18" y="-6" width="36" height="40" rx="4" fill="#7b5a43"/><path d="M0,-6 C-30,-40 -20,-70 0,-90 C20,-70 30,-40 0,-6" fill="#2f7d4f"/><path d="M0,-6 C-40,-20 -46,-50 -30,-60 M0,-6 C40,-20 46,-50 30,-60" stroke="#2f7d4f" stroke-width="10" fill="none" stroke-linecap="round"/></g>
+</svg>
+<div class="ticker"><span id="tape">MNQ desk is opening...</span></div>
+</div>
 <div id="signals"></div>
 <div class="cols">
  <div class="card"><h2>Market</h2><div class="hero"><div><div class="k">MNQ price</div><div class="big" id="price">-</div></div>
@@ -240,7 +374,43 @@ return '<tr class="k"><td>Level</td><td>Note</td><td class="num">Distance</td><t
 <td><b>${fmt(l.price)}</b></td><td>${esc(l.note)}</td><td class="num">${l.dist==null?'-':(l.dist>0?'+':'')+fmt(l.dist)}</td>
 <td>${esc(l.state)}${l.last?` <span class="${l.last==='HELD'?'pos':'neg'}">(last ${esc(l.last)})</span>`:''}</td><td class="num">${l.held} / ${l.broke}</td>
 <td class="num"><button style="padding:4px 10px" onclick="delLevel(${l.id})">Remove</button></td></tr>`).join('')}
-async function tick(){let s;try{s=await (await fetch('/state')).json()}catch(e){set('mode','bot offline');return}
+
+let hist=[],lastTape='',confettiOn=false;
+function sceneSky(h){const s1=document.getElementById('sky1'),s2=document.getElementById('sky2'),sun=document.getElementById('sun'),moon=document.getElementById('moon'),lt=document.getElementById('lights');
+ let a,b,day=false,dusk=false;if(h>=7&&h<17){a='#7fb6ec';b='#cfe6fb';day=true}else if((h>=17&&h<20)||(h>=5&&h<7)){a='#3d3a78';b='#f29a6b';dusk=true}else{a='#0b1530';b='#24365e'}
+ s1.setAttribute('stop-color',a);s2.setAttribute('stop-color',b);sun.style.display=day||dusk?'':'none';sun.setAttribute('cy',dusk?150:78);moon.style.display=day?'none':(dusk?'none':'');lt.style.display=day?'none':''}
+function sceneClock(c){const m=/(\d+):(\d+)/.exec(c||'');if(!m)return;const h=+m[1],mi=+m[2];
+ document.getElementById('hHand').setAttribute('transform',`rotate(${(h%12)*30+mi/2})`);document.getElementById('mHand').setAttribute('transform',`rotate(${mi*6})`);sceneSky(h)}
+function confetti(on){const g=document.getElementById('confetti');if(on===confettiOn)return;confettiOn=on;if(!on){g.innerHTML='';return}
+ const cols=['#3ccf8e','#ffd36b','#6c9bff','#ff6b5e','#ffffff'];let h='';for(let i=0;i<34;i++){const x=260+Math.random()*620,d=(Math.random()*2.4).toFixed(2),w=4+Math.random()*5;
+ h+=`<rect x="${x.toFixed(0)}" y="0" width="${w.toFixed(1)}" height="${(w*1.8).toFixed(1)}" fill="${cols[i%5]}" style="animation-delay:${d}s"/>`}g.innerHTML=h}
+function scene(s,offline){const mg=document.getElementById('mgr'),b=document.getElementById('bubble'),st=(s&&s.status)||{};
+ let mood='work',say=st.note||'Watching the tape.';const t=st.trade,lr=st.last_result,now=Date.now()/1000;
+ if(offline){mood='sleep';say='Zzz... the bot is offline. Start it again and I am back at the desk.'}
+ else if(s.pending&&s.pending.length){const g=s.pending[0].signal;mood='alert';say=`Setup! ${g.side.toUpperCase()} ${g.size} MNQ @ ${fmt(g.entry)}. Stop ${fmt(g.stop)}, target ${fmt(g.target)}.`+(s.pending[0].mode==='confirm'?' Your call: Accept or Reject below.':' Taking it.')}
+ else if(t){mood='focus';say=`Managing the ${t.side}: ${t.open_pnl==null?'':money(t.open_pnl)+' open'}${t.open_r==null?'':' ('+(t.open_r>0?'+':'')+fmt(t.open_r)+'R)'}. Stop ${fmt(t.stop)}.`}
+ else if(lr&&now-lr.ts<900){if(lr.pnl>0){mood='win';say=`Booked ${money(lr.pnl)} on the ${lr.side}. That is how it is done.`}else{mood='loss';say=`Stopped on the ${lr.side}: ${money(lr.pnl)}. One loss, we are done for the day. Discipline.`}}
+ else if(!st.can_enter&&st.session&&(st.session==='Closed'||/outside the entry window/.test(st.why_not||''))){mood='coffee';say=(st.note?st.note+'. ':'')+'Coffee until the session.'}
+ else if(st.why_not&&/daily stop/.test(st.why_not)){mood='coffee';say='Done for the day: '+st.why_not+'.'}
+ mg.setAttribute('class',mood);b.textContent=say;confetti(mood==='win');
+ document.getElementById('office').classList.toggle('dim',!!offline);
+ sceneClock(st.clock);
+ if(offline)return;
+ if(st.price!=null){hist.push(st.price);if(hist.length>150)hist.shift()}
+ document.getElementById('mPrice').textContent=fmt(st.price);
+ if(hist.length>1){const lo=Math.min(...hist),hi=Math.max(...hist),r=(hi-lo)||1;document.getElementById('spark').setAttribute('points',hist.map((p,i)=>`${(314+i*(162/(hist.length-1))).toFixed(1)},${(218-(p-lo)/r*56).toFixed(1)}`).join(' '));
+  document.getElementById('spark').setAttribute('stroke',hist[hist.length-1]>=hist[0]?'#3ccf8e':'#ff6b5e')}
+ document.getElementById('mAgg').textContent=st.agg==null?'aggression -':`aggression ${(st.agg>0?'+':'')+fmt(st.agg,3)} ${st.agg>0.1?'buyers':st.agg<-0.1?'sellers':'balanced'}`;
+ const mL=document.getElementById('monL'),mR=document.getElementById('monR');
+ mL.setAttribute('class',t?(t.side==='long'?'glow-long':'glow-short'):'');mR.setAttribute('class',t?(t.side==='long'?'glow-long':'glow-short'):mood==='alert'?'flash':'');
+ const rm=document.getElementById('rMain'),rs=document.getElementById('rSub');
+ if(t){rm.textContent=`${t.side.toUpperCase()} ${t.size}`;rm.setAttribute('fill',t.side==='long'?'#3ccf8e':'#ff6b5e');rs.textContent=t.open_pnl==null?'':money(t.open_pnl)+(t.open_r==null?'':'  '+(t.open_r>0?'+':'')+fmt(t.open_r)+'R')}
+ else if(mood==='alert'){const g=s.pending[0].signal;rm.textContent=`${g.side.toUpperCase()}?`;rm.setAttribute('fill','#ffd36b');rs.textContent='@ '+fmt(g.entry)}
+ else{rm.textContent='FLAT';rm.setAttribute('fill','#e8eef8');rs.textContent=st.can_enter?'ready':'waiting'}
+ document.getElementById('rDay').textContent='day '+money(st.day_pnl)+'  ·  '+(st.strategy||'');
+ const b2=st.bias||{},g=st.gamma||{};const tape=`MNQ ${fmt(st.price)}   ·   DAY P&L ${money(st.day_pnl)}   ·   ${b2.why?esc(b2.why).toUpperCase()+' → '+(b2.allow==='both'?'LONGS & SHORTS':b2.allow==='none'?'NO TRADE':(b2.allow||'').toUpperCase()+'S ONLY'):''}   ·   ${g.flip?'GAMMA FLIP '+fmt(g.flip)+'   ·   CALL WALL '+fmt(g.call_wall)+'   ·   PUT WALL '+fmt(g.put_wall):''}   ·   ${st.combine?'COMBINE '+money(st.combine.profit)+' / '+money(st.combine.target):''}   ·   ${esc(st.session||'')} SESSION`;
+ if(tape!==lastTape){lastTape=tape;document.getElementById('tape').textContent=tape}}
+async function tick(){let s;try{s=await (await fetch('/state')).json()}catch(e){set('mode','bot offline');scene(null,true);return}
 const st=s.status||{},m=document.getElementById('mode');m.textContent=st.mode||'waiting for the bot';m.className='pill '+((st.mode||'').startsWith('LIVE')?'live':'paper');
 set('clock',esc(st.clock||''));set('sess',st.session?'Session: '+esc(st.session):'');set('strat',st.strategy?'Strategy: '+esc(st.strategy):'');
 const ok=st.stream_ok&&(st.data_age==null||st.data_age<180);
@@ -267,7 +437,7 @@ return `<div class="card sig"><h3 class="${g.side}">${g.side.toUpperCase()} ${g.
 <div class="grid">${stat('Stop',fmt(g.stop))}${stat('Target',fmt(g.target))}${stat('Risk',money(g.risk_usd))}${stat('Reward',money(g.reward_usd))}${stat('Gamma',g.gamma?(g.gamma.toward_flip?'toward flip':'away from flip'):'-',g.gamma?(g.gamma.toward_flip?'pos':'neg'):'')}${stat('Time left',p.left+'s')}</div>
 <p class="muted">${q?'The bot will place this trade only if you accept.':'The bot is taking this one itself. Would you take it? Your answer is logged.'}</p>
 <div class="row"><button class="yes" onclick="decide(${p.id},true)">${q?'Accept':'Yes, I would'}</button><button class="no" onclick="decide(${p.id},false)">${q?'Reject':'No'}</button></div></div>`}).join(''));
-set('events',s.events.map(e=>`<li><span>${esc(e.t)}</span>${esc(e.text)}</li>`).join(''))}
+set('events',s.events.map(e=>`<li><span>${esc(e.t)}</span>${esc(e.text)}</li>`).join(''));scene(s,false)}
 tick();setInterval(tick,1000);
 </script></body></html>
 """

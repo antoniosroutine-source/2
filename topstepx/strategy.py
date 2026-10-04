@@ -263,7 +263,8 @@ class AsiaRangeSweep:
             self.seen_hi = self.seen_lo = None
             self.liq = [lv["price"] for lv in self.sessions.levels(b.t)[0]]
             self.bias = self._ny_bias(sdate)
-            self.done = sdate.weekday() >= 4      # Friday, Saturday and Sunday evenings: no session
+            closed = (4, 5) if getattr(self.p, "ASIA_SUNDAY", False) else (4, 5, 6)
+            self.done = sdate.weekday() in closed  # Friday and Saturday evenings (and Sunday unless ASIA_SUNDAY)
             self.note = "weekend: no session" if self.done else "building the Asia range"
         if self.done:
             return None
@@ -317,12 +318,18 @@ class AsiaRangeSweep:
     def _ny_bias(self, sdate):
         """Today's NY session (09:30-16:00) move decides the Asia direction: NY dump -> Asia recovery."""
         g = self.sessions.groups.get(("ny", sdate))
+        prev = ""
+        if not g and getattr(self.p, "ASIA_SUNDAY", False):
+            done = [td for (n, td) in self.sessions.groups if n == "ny" and td < sdate]
+            if done:                                 # Sunday: use the last NY session (Friday)
+                prev = f" (last NY session, {max(done):%a %b %d})"
+                g = self.sessions.groups[("ny", max(done))]
         if not g:
             info = {"why": "no NY session today", "ny_move": None}
         else:
             move = round(g["c"] - g["o"], 2)
             info = {"ny_open": g["o"], "ny_close": g["c"], "ny_move": move,
-                    "why": f"NY {'dumped' if move < 0 else 'rallied' if move > 0 else 'closed flat'} {abs(move):.2f} pts"}
+                    "why": f"NY {'dumped' if move < 0 else 'rallied' if move > 0 else 'closed flat'} {abs(move):.2f} pts{prev}"}
         if not getattr(self.p, "ASIA_NY_BIAS", False):
             return {**info, "allow": "both"}
         m = info["ny_move"]

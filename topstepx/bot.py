@@ -633,6 +633,7 @@ class Bot:
         log("trade_closed", pnl=res[1], how=res[2], **t, day_pnl=round(self.guard.pnl, 2),
             losses_today=self.guard.losses)
         self.desk.event(f"CLOSED {t['side']}: ${res[1]:,.2f} ({res[2]})")
+        self.desk.update(last_result={"pnl": round(res[1], 2), "side": t["side"], "ts": now})
         self.trade = None
 
     def run(self):
