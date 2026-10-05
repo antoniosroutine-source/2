@@ -375,7 +375,7 @@ ul{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto}li{padding:
  <div class="card"><h2>Today</h2><div class="grid" id="today"></div><div id="combine" style="margin-top:12px"></div></div>
  <div class="card"><h2>Setup</h2><div class="grid" id="plan"></div></div>
  <div class="card"><h2>Bias for today</h2><div class="row" id="biasbtns" style="margin-bottom:10px"></div><div id="votes"></div></div>
- <div class="card"><h2>Gamma levels</h2><div id="gamma"></div></div>
+ <div class="card" id="gammacard"><h2>Gamma levels</h2><div id="gamma"></div></div>
  <div class="card"><h2>Order book walls</h2><div class="scroll"><table id="walls"></table></div><p class="k" style="margin:8px 0 0">Resting orders of 100+ contracts and 4x the typical size, nearest first.</p></div>
 </div>
 <div class="card" style="margin-top:12px"><h2>My levels</h2>
@@ -468,6 +468,7 @@ set('today',stat('Day P&L',money(st.day_pnl),sgn(st.day_pnl))+stat('Trades',st.t
 const c=st.combine;set('combine',c?`<div class="k">Combine progress: ${money(c.profit)} of ${money(c.target)} · balance ${money(c.balance)}</div><div class="bar"><i style="width:${Math.max(0,Math.min(100,c.profit/c.target*100))}%"></i></div>`:'');
 const b=st.bias||{};set('plan',stat('Bias',b.why?esc(b.why):'-')+stat('Bot allows',b.allow==null?'-':b.allow==='both'?'longs and shorts':b.allow==='none'?'no trade':esc(b.allow)+'s only',b.allow==='long'?'long':b.allow==='short'?'short':'')
 +stat('Range high',fmt(st.range_high))+stat('Range low',fmt(st.range_low))+stat('Range width',st.range_high&&st.range_low?fmt(st.range_high-st.range_low)+' pts':'-'));
+document.getElementById('gammacard').hidden=!st.gamma_on;
 const g=st.gamma||{},d=x=>st.price&&x?` <span class="k">(${x-st.price>0?'+':''}${fmt(x-st.price)})</span>`:'';
 set('gamma',g.flip?`<div class="grid">${stat('Regime',esc((g.regime||'').replace('_',' ')),g.regime==='positive_gamma'?'pos':'neg')}${stat('Gamma flip',fmt(g.flip)+d(g.flip))}${stat('Call wall',fmt(g.call_wall)+d(g.call_wall))}${stat('Put wall',fmt(g.put_wall)+d(g.put_wall))}</div>
 <p class="k" style="margin:8px 0 0">${st.price?(st.price>g.flip?'Price above the flip: a short fades toward it.':'Price below the flip: a long fades toward it.'):''} Snapshot ${esc((g.computed||'').slice(0,16).replace('T',' '))} UTC.</p>`:'<p class="muted" style="margin:0">No gamma snapshot yet (updates around midday ET).</p>');

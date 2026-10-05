@@ -475,7 +475,7 @@ class Bot:
         td = str(trading_day(now, config.DAY_START))
         override = self.desk.bias_for(td)
         allow_now = override or bias.get("allow") or "both"
-        self.desk.update(trading_day=td, votes=votes, bias_override=override,
+        self.desk.update(gamma_on=bool(self.gamma), trading_day=td, votes=votes, bias_override=override,
                          allow_now={"long": "longs only", "short": "shorts only", "both": "longs and shorts",
                                     "none": "no trade"}.get(allow_now, allow_now))
         self.desk.update(

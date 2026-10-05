@@ -77,8 +77,8 @@ AGG_MIN_RATIO = 0.10              # |buy - sell| / total must be at least this t
 NY_MOVE_MIN_PTS = 50.0            # NY session move needed to call it a dump or a rally (bias log)
 
 # --- Gamma levels (free daily feed, computed from QQQ options) ---------------------------------
-GAMMA_MODE = "log"                # "off"; "log" = record whether each trade fades toward the gamma flip;
-                                  # "filter" = also skip fades aimed away from the flip (0 of 7 won, Apr-Sep 2026)
+GAMMA_MODE = "off"                # off (default): the free feed is computed once a day and is stale by the session.
+                                  # "log" = show and record the levels; "filter" = also skip fades aimed away from the flip
 GAMMA_URL = "https://raw.githubusercontent.com/haus-edge/gex-levels/master/data/gex_QQQ.txt"
 GAMMA_REFRESH_SEC = 1800          # check for a new snapshot every 30 minutes (published around midday ET)
 GAMMA_MAX_AGE_HOURS = 30          # an older snapshot is ignored
