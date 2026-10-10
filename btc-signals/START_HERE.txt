@@ -1,0 +1,12 @@
+BTC RSI SIGNAL BOT - alerts only, it never trades
+
+1. Open this folder (the one with bot.py), click the address bar, type cmd, press Enter.
+2. Type:   python bot.py
+3. Open http://127.0.0.1:8768/ in your browser and click the page once (so alerts can beep).
+
+Optional, before step 2:
+  set BTC_TF=15            15-minute candles instead of 5
+  set BTC_MODE=turn        short only after RSI turns back down from 70
+  set BTC_NTFY_TOPIC=xyz   phone alerts via the free ntfy app (subscribe to the same topic)
+
+Stop it with Ctrl+C. Signals are saved in signals.jsonl.
