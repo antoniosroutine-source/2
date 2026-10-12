@@ -1,2 +1,2 @@
-id,date,topstep_day,account,instrument,source,side,contracts,entry,stop,target,exit,exit_reason,points,gross_usd,est_fees_usd,net_usd,risk_usd,r_multiple,result
-1,2026-10-12,2026-10-13,50K Express,MNQZ26,manual,short,2,30897.50,30911.50,30859.00,30859.00,target,38.50,154.00,1.48,152.52,56.00,2.75,win
+id,date,topstep_day,entry_time_et,exit_time_et,account,instrument,source,setup,side,contracts,entry,stop,target,exit,exit_reason,points,gross_usd,fees_usd,net_usd,risk_usd,r_multiple,result
+1,2026-10-12,2026-10-13,18:25,19:00,50K Express,MNQZ26,manual,HTF rejection block + 15s bearish IFVG,short,2,30897.50,30911.50,30859.00,30859.00,target,38.50,154.00,2.44,151.56,56.00,2.75,win
