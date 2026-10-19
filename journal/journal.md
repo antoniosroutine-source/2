@@ -3,7 +3,7 @@
 Every trade gets a row in `trades.csv` and an entry here. Bot trades and manual trades are kept apart
 (see the `source` column).
 
-## Running totals
+## Running totals (closed trades)
 
 | Trades | Wins | Losses | Win rate | Net | Total R | Avg R |
 |-------:|-----:|-------:|---------:|----:|--------:|------:|
@@ -14,6 +14,26 @@ Every trade gets a row in `trades.csv` and an entry here. Bot trades and manual 
 | Setup | Trades | Wins | Net | Total R |
 |---|---:|---:|---:|---:|
 | HTF rejection block + 15s bearish IFVG | 1 | 1 | +$151.56 | +2.75R |
+
+---
+
+## #2 · Sun Oct 18, 2026 · MCL short · OPEN ⏳
+
+| | |
+|---|---|
+| Account | $50K Express (funded) |
+| Contract | MCLZ26 (Micro Crude Oil, Dec '26), 15-minute chart |
+| Source | Manual (not bot P&L) |
+| Session | Sunday evening reopen. This counts toward Topstep's **Mon Oct 19** trading day |
+| Side / size | **Short 6** contracts |
+| Entry | **98.17**, taken between the 98.27 and 98.10 lines after the Sunday open dropped from Friday's ~99 highs |
+| Stop | Moved to 98.16, one tick past entry (about +$6 before fees, about −$4 after ~$10 of round-trip fees). Original stop: not recorded yet |
+| Target | **95.32** (2.85 pts) → **+$1,709** gross, back to where Friday's rally started |
+| Status at 8:14 PM ET Sun | Price 97.62, **+$329 open**, through the 98.10 and 97.84 lines. Next line down: 96.97 |
+| Odds (no-edge baseline) | About **19%** target before stop from 97.62; about 13–20% once Topstep's 3:10 PM CT Monday flat time is counted |
+| Context | Topstep's Tilt showed 81% of traders short crude (a crowded side) |
+
+**Result:** *(pending; send the closing screenshot)*
 
 ---
 

@@ -1,2 +1,3 @@
 id,date,topstep_day,entry_time_et,exit_time_et,account,instrument,source,setup,side,contracts,entry,stop,target,exit,exit_reason,points,gross_usd,fees_usd,net_usd,risk_usd,r_multiple,result
 1,2026-10-12,2026-10-13,18:25,19:00,50K Express,MNQZ26,manual,HTF rejection block + 15s bearish IFVG,short,2,30897.50,30911.50,30859.00,30859.00,target,38.50,154.00,2.44,151.56,56.00,2.75,win
+2,2026-10-18,2026-10-19,~19:10,,50K Express,MCLZ26,manual,,short,6,98.17,98.16,95.32,,,,,,,,,open
